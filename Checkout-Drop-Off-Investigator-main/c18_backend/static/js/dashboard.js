@@ -1126,14 +1126,14 @@ function renderReasonInvestigationTable() {
       defaultAction: 'Review orders with high delivery fees, test free/low-cost shipping thresholds, and show the final delivery charge earlier in checkout.'
     },
     {
-      id: 'checkout_errors',
+      id: 'complicated_checkout',
       number: 3,
-      title: 'Website/Checkout Errors',
-      icon: '⚠️',
-      matchKeys: ['error', 'checkout or website errors', 'website/checkout errors'],
+      title: 'Complicated / Lengthy Checkout',
+      icon: '📝',
+      matchKeys: ['complicated', 'lengthy', 'checkout process', 'complicated / lengthy checkout', 'checkout_errors', 'complicated_checkout'],
       defaultStage: 'Cart → Checkout',
-      relevantStages: ['all', 'checkout', 'cart'],
-      defaultAction: 'Continue monitoring checkout errors and maintain error logging to detect future issues.'
+      relevantStages: ['all', 'checkout', 'cart', 'paid'],
+      defaultAction: 'Simplify checkout steps, reduce unnecessary form fields, and enable faster checkout options.'
     },
     {
       id: 'slow_page_loading',
@@ -1144,6 +1144,26 @@ function renderReasonInvestigationTable() {
       defaultStage: 'Visit → Checkout',
       relevantStages: ['all', 'visit', 'cart', 'checkout', 'paid'],
       defaultAction: 'Optimize checkout page assets, reduce API response time, and investigate sessions exceeding the 3.48s threshold.'
+    },
+    {
+      id: 'window_shopping',
+      number: 5,
+      title: 'Window Shopping',
+      icon: '🛍️',
+      matchKeys: ['window_shopping', 'window shopping', 'browse', 'window', 'browsing', 'comparison'],
+      defaultStage: 'Visit → Cart',
+      relevantStages: ['all', 'visit'],
+      defaultAction: 'Engage browsing visitors with personalized product recommendations, clear value propositions, and exit-intent prompts to encourage adding items to cart.'
+    },
+    {
+      id: 'no_discounts_offers',
+      number: 6,
+      title: 'No Discounts / Offers',
+      icon: '🏷️',
+      matchKeys: ['no_discounts_offers', 'discounts', 'discount', 'offers', 'coupons', 'coupon', 'promo', 'no discounts / offers'],
+      defaultStage: 'Cart → Checkout',
+      relevantStages: ['all', 'cart', 'checkout'],
+      defaultAction: 'Introduce first-purchase promo banners, test automated cart-level discount thresholds (e.g., $10 off $50), and provide visible coupon code discovery.'
     }
   ];
 
