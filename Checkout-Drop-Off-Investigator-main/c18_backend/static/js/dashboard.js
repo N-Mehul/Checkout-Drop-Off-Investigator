@@ -1178,12 +1178,67 @@ function renderReasonInvestigationTable() {
     // Standardize status: CONFIRMED | SUPPORTED | INSUFFICIENT DATA | NOT DETECTED
     let rawStatus = (item.status || '').toUpperCase().trim();
     let status = 'INSUFFICIENT DATA';
-    if (rawStatus === 'CONFIRMED') status = 'CONFIRMED';
-    else if (rawStatus === 'SUPPORTED') status = 'SUPPORTED';
-    else if (rawStatus === 'NOT DETECTED') status = 'NOT DETECTED';
-    else if (rawStatus === 'INSUFFICIENT DATA' || rawStatus === 'INSUFFICIENT_DATA') status = 'INSUFFICIENT DATA';
-    else if (item.evidence_present) status = 'SUPPORTED';
-    else status = 'INSUFFICIENT DATA';
+    if (rawStatus === 'INSUFFICIENT DATA' || rawStatus === 'INSUFFICIENT_DATA') {
+      status = 'INSUFFICIENT DATA';
+    } else if (rawStatus === 'CONFIRMED') {
+      status = 'CONFIRMED';
+    } else if (rawStatus === 'SUPPORTED') {
+      status = 'SUPPORTED';
+    } else if (rawStatus === 'NOT DETECTED') {
+      status = 'NOT DETECTED';
+    } else {
+      status = 'INSUFFICIENT DATA';
+    }
+
+    // Dynamic resolution of affected counts based on activeDevice, activeStage, and activePeriod
+    const devKey = activeDevice;
+    const stageKey = activeStage;
+    const periodKey = activePeriod; // 'comparison', 'before', 'after'
+    const isStageRelevant = meta.relevantStages.includes(stageKey);
+
+    let beforeCount = 0;
+    let afterCount = 0;
+    let affectedCount = 0;
+
+    if (status !== 'INSUFFICIENT DATA') {
+      if (item.breakdown && item.breakdown.by_device_and_stage && item.breakdown.by_device_and_stage[devKey]) {
+        const bData = item.breakdown.by_device_and_stage[devKey][stageKey];
+        if (bData) {
+          beforeCount = bData.before_affected || 0;
+          afterCount = bData.after_affected || 0;
+        }
+      } else if (item.breakdown && item.breakdown.by_device && item.breakdown.by_device[devKey]) {
+        const bDev = item.breakdown.by_device[devKey];
+        if (isStageRelevant) {
+          beforeCount = bDev.before_affected || 0;
+          afterCount = bDev.after_affected || 0;
+        }
+      } else if (isStageRelevant) {
+        beforeCount = item.before_affected !== undefined ? Number(item.before_affected) : 0;
+        afterCount = item.after_affected !== undefined ? Number(item.after_affected) : 0;
+      }
+
+      // Step 2 & 5: Apply selected Before/After time period & calculate Affected Sessions
+      if (periodKey === 'before') {
+        affectedCount = beforeCount;
+      } else if (periodKey === 'after') {
+        affectedCount = afterCount;
+      } else { // 'comparison' (Before vs After)
+        affectedCount = beforeCount + afterCount;
+      }
+
+      // Dynamic status reflecting the applied filters
+      const isConfirmed = rawStatus === 'CONFIRMED' || meta.id === 'payment_failures';
+      if (!isStageRelevant) {
+        status = 'NOT DETECTED';
+      } else if (periodKey === 'before') {
+        status = beforeCount > 0 ? (isConfirmed ? 'CONFIRMED' : 'SUPPORTED') : 'NOT DETECTED';
+      } else if (periodKey === 'after') {
+        status = afterCount > 0 ? (isConfirmed ? 'CONFIRMED' : 'SUPPORTED') : 'NOT DETECTED';
+      } else { // 'comparison'
+        status = (beforeCount > 0 || afterCount > 0) ? (isConfirmed ? 'CONFIRMED' : 'SUPPORTED') : 'NOT DETECTED';
+      }
+    }
 
     // Status classes and icons
     let badgeClass = 'status-badge-insufficient';
@@ -1208,76 +1263,56 @@ function renderReasonInvestigationTable() {
       statusIcon = '○';
     }
 
-    // Dynamic resolution of affected counts based on activeDevice and activeStage
-    let affectedCount = 0;
-    let beforeCount = 0;
-    let afterCount = 0;
-
-    const devKey = activeDevice;
-    const stageKey = activeStage;
-    const isStageRelevant = meta.relevantStages.includes(stageKey);
-
-    if (item.breakdown && item.breakdown.by_device_and_stage && item.breakdown.by_device_and_stage[devKey]) {
-      const bData = item.breakdown.by_device_and_stage[devKey][stageKey];
-      if (bData) {
-        affectedCount = bData.affected_sessions || 0;
-        beforeCount = bData.before_affected || 0;
-        afterCount = bData.after_affected || 0;
-      }
-    } else if (item.breakdown && item.breakdown.by_device && item.breakdown.by_device[devKey]) {
-      const bDev = item.breakdown.by_device[devKey];
-      affectedCount = bDev.affected_sessions || 0;
-      beforeCount = bDev.before_affected || 0;
-      afterCount = bDev.after_affected || 0;
-      if (!isStageRelevant) {
-        affectedCount = 0;
-        beforeCount = 0;
-        afterCount = 0;
-      }
-    } else {
-      affectedCount = item.affected_sessions !== undefined ? Number(item.affected_sessions) : 0;
-      beforeCount = item.before_affected !== undefined ? Number(item.before_affected) : 0;
-      afterCount = item.after_affected !== undefined ? Number(item.after_affected) : 0;
-      if (!isStageRelevant) {
-        affectedCount = 0;
-        beforeCount = 0;
-        afterCount = 0;
-      }
-    }
-
+    const devNote = devKey !== 'all' ? ` on ${capitalize(devKey)}` : '';
     let affectedDisplay = '';
+
     if (status === 'INSUFFICIENT DATA') {
-      affectedDisplay = `<span class="reason-affected-value" style="color: #64748b;">0 sessions <span style="font-weight: normal; font-size: 0.78rem;">(Uninstrumented)</span></span>`;
-    } else if (status === 'NOT DETECTED') {
-      affectedDisplay = `<span class="reason-affected-value" style="color: #059669;">0 sessions <span style="font-weight: normal; font-size: 0.78rem;">(None detected)</span></span>`;
+      affectedDisplay = `<span class="reason-affected-value" style="color: #64748b;">0 sessions <span style="font-weight: normal; font-size: 0.78rem;">(Uninstrumented in dataset)</span></span>`;
     } else if (!isStageRelevant) {
       affectedDisplay = `<span class="reason-affected-value" style="color: #64748b;">0 sessions <span style="font-weight: normal; font-size: 0.78rem;">(Not active at ${stageTitle} stage)</span></span>`;
-    } else {
-      const devNote = devKey !== 'all' ? ` on ${capitalize(devKey)}` : '';
-      affectedDisplay = `<span class="reason-affected-value" style="color: #dc2626;">${affectedCount} sessions <span style="font-weight: normal; font-size: 0.78rem; color: #64748b;">(Before: ${beforeCount} | After: ${afterCount}${devNote})</span></span>`;
+    } else if (periodKey === 'before') {
+      const color = beforeCount > 0 ? '#dc2626' : '#059669';
+      affectedDisplay = `<span class="reason-affected-value" style="color: ${color};">${beforeCount} sessions <span style="font-weight: normal; font-size: 0.78rem; color: #64748b;">(Before Period${devNote})</span></span>`;
+    } else if (periodKey === 'after') {
+      const color = afterCount > 0 ? '#dc2626' : '#059669';
+      affectedDisplay = `<span class="reason-affected-value" style="color: ${color};">${afterCount} sessions <span style="font-weight: normal; font-size: 0.78rem; color: #64748b;">(After Period${devNote})</span></span>`;
+    } else { // 'comparison'
+      const color = (beforeCount + afterCount) > 0 ? '#dc2626' : '#059669';
+      affectedDisplay = `<span class="reason-affected-value" style="color: ${color};">${affectedCount} sessions <span style="font-weight: normal; font-size: 0.78rem; color: #64748b;">(Before: ${beforeCount} | After: ${afterCount}${devNote})</span></span>`;
     }
 
-    // Evidence Before vs After
+    // Evidence Before vs After from the SAME reason-specific calculation
     let beforeEvidence = item.before_evidence;
     let afterEvidence = item.after_evidence;
-    if (!beforeEvidence) {
-      beforeEvidence = status === 'INSUFFICIENT DATA' ? 'Field uninstrumented in dataset' : 'No anomalies observed';
-    }
-    if (!afterEvidence) {
-      afterEvidence = status === 'INSUFFICIENT DATA' ? 'Field uninstrumented in dataset' : (item.observation || 'No anomalies observed');
-    }
 
-    // Contextualize evidence text if specific device or stage filter is applied
-    if (status === 'CONFIRMED' || status === 'SUPPORTED') {
-      if (devKey !== 'all' || stageKey !== 'all') {
-        const devLabel = devKey !== 'all' ? ` (${capitalize(devKey)})` : '';
-        if (isStageRelevant) {
-          beforeEvidence = `${beforeCount} session(s) observed in before period${devLabel}`;
-          afterEvidence = `${afterCount} drop-off session(s) in after period${devLabel}`;
-        } else {
-          beforeEvidence = `0 sessions at ${stageTitle} stage`;
-          afterEvidence = `0 sessions at ${stageTitle} stage`;
-        }
+    if (status === 'INSUFFICIENT DATA') {
+      beforeEvidence = item.before_evidence || 'Field uninstrumented in dataset';
+      afterEvidence = item.after_evidence || 'Field uninstrumented in dataset';
+    } else if (!isStageRelevant) {
+      beforeEvidence = `0 sessions at ${stageTitle} stage`;
+      afterEvidence = `0 sessions at ${stageTitle} stage`;
+    } else {
+      if (meta.id === 'payment_failures') {
+        beforeEvidence = `${beforeCount} session(s) recorded payment failures${devNote}`;
+        afterEvidence = `${afterCount} session(s) recorded payment failures${devNote}`;
+      } else if (meta.id === 'delivery_charges') {
+        beforeEvidence = `${beforeCount} drop-off session(s) had delivery fee > 0${devNote}`;
+        afterEvidence = `${afterCount} drop-off session(s) had delivery fee > 0${devNote}`;
+      } else if (meta.id === 'complicated_checkout') {
+        beforeEvidence = `${beforeCount} drop-off session(s) exceeded checkout step/time threshold${devNote}`;
+        afterEvidence = `${afterCount} drop-off session(s) exceeded checkout step/time threshold${devNote}`;
+      } else if (meta.id === 'slow_page_loading') {
+        beforeEvidence = `${beforeCount} drop-off session(s) > 3.48s threshold${devNote}`;
+        afterEvidence = `${afterCount} drop-off session(s) > 3.48s threshold${devNote}`;
+      } else if (meta.id === 'window_shopping') {
+        beforeEvidence = `${beforeCount} session(s) with window shopping/browsing intent${devNote}`;
+        afterEvidence = `${afterCount} drop-off session(s) with window shopping/browsing intent${devNote}`;
+      } else if (meta.id === 'no_discounts_offers') {
+        beforeEvidence = `${beforeCount} session(s) abandoned with coupon/discount issue${devNote}`;
+        afterEvidence = `${afterCount} drop-off session(s) with coupon/discount issue${devNote}`;
+      } else {
+        beforeEvidence = `${beforeCount} session(s) in before period${devNote}`;
+        afterEvidence = `${afterCount} session(s) in after period${devNote}`;
       }
     }
 

@@ -292,7 +292,7 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
             a_sids = [s['session_id'] for s in session_rows if s['period'] == 'after' and 'paid' not in s['reached'] and (d == 'all' or s['device'] == d)]
             b_aff = sum(1 for sid in b_sids if predicate(session_events.get(sid, [])))
             a_aff = sum(1 for sid in a_sids if predicate(session_events.get(sid, [])))
-            by_dev[d] = {'before_affected': b_aff, 'after_affected': a_aff, 'affected_sessions': a_aff}
+            by_dev[d] = {'before_affected': b_aff, 'after_affected': a_aff, 'total_affected': b_aff + a_aff, 'affected_sessions': a_aff}
             by_both[d] = {}
 
         for stg in stages:
@@ -314,14 +314,14 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
             a_sids = [s['session_id'] for s in session_rows if s['period'] == 'after' and 'paid' not in s['reached'] and matches_stg(s)]
             b_aff = sum(1 for sid in b_sids if predicate(session_events.get(sid, [])))
             a_aff = sum(1 for sid in a_sids if predicate(session_events.get(sid, [])))
-            by_stg[stg] = {'before_affected': b_aff, 'after_affected': a_aff, 'affected_sessions': a_aff}
+            by_stg[stg] = {'before_affected': b_aff, 'after_affected': a_aff, 'total_affected': b_aff + a_aff, 'affected_sessions': a_aff}
 
             for d in devs:
                 b_both_sids = [sid for sid in b_sids if d == 'all' or session_row_by_id[sid]['device'] == d]
                 a_both_sids = [sid for sid in a_sids if d == 'all' or session_row_by_id[sid]['device'] == d]
                 b_aff_both = sum(1 for sid in b_both_sids if predicate(session_events.get(sid, [])))
                 a_aff_both = sum(1 for sid in a_both_sids if predicate(session_events.get(sid, [])))
-                by_both[d][stg] = {'before_affected': b_aff_both, 'after_affected': a_aff_both, 'affected_sessions': a_aff_both}
+                by_both[d][stg] = {'before_affected': b_aff_both, 'after_affected': a_aff_both, 'total_affected': b_aff_both + a_aff_both, 'affected_sessions': a_aff_both}
 
         return {'by_device': by_dev, 'by_stage': by_stg, 'by_device_and_stage': by_both}
 
@@ -360,6 +360,7 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
         'affected_sessions': total_pm_affected,
         'before_affected': before_pm_fails,
         'after_affected': after_pm_fails,
+        'total_affected': before_pm_fails + after_pm_fails,
         'before_evidence': before_ev_text,
         'after_evidence': after_ev_text,
         'evidence_present': payment_evidence,
@@ -410,6 +411,7 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
         'affected_sessions': total_del_affected,
         'before_affected': before_del_affected,
         'after_affected': after_del_affected,
+        'total_affected': before_del_affected + after_del_affected,
         'before_evidence': before_ev_text,
         'after_evidence': after_ev_text,
         'evidence_present': delivery_evidence,
@@ -422,44 +424,43 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
 
     # 3. Complicated / Lengthy Checkout
     action_complicated = "Simplify checkout steps, reduce unnecessary form fields, and enable faster checkout options."
-    checkout_step_telemetry = any(safe_parse_float(e.get('checkout_steps')) is not None or safe_parse_float(e.get('checkout_time')) is not None for e in normalized)
+    checkout_step_telemetry = any(
+        (safe_parse_float(e.get('checkout_steps')) is not None and safe_parse_float(e.get('checkout_steps')) > 0) or
+        (safe_parse_float(e.get('checkout_time')) is not None and safe_parse_float(e.get('checkout_time')) > 0)
+        for e in normalized
+    )
 
-    def abandoned_during_checkout(evs):
-        sid = evs[0]['session_id'] if evs else None
-        if not sid or sid not in session_row_by_id:
-            return False
-        s = session_row_by_id[sid]
-        if 'paid' in s['reached']:
-            return False
-        if checkout_step_telemetry:
+    if checkout_step_telemetry:
+        def abandoned_during_checkout(evs):
+            sid = evs[0]['session_id'] if evs else None
+            if not sid or sid not in session_row_by_id:
+                return False
+            s = session_row_by_id[sid]
+            if 'paid' in s['reached']:
+                return False
             return any(
                 (safe_parse_float(e.get('checkout_steps')) is not None and safe_parse_float(e.get('checkout_steps')) > 3) or
                 (safe_parse_float(e.get('checkout_time')) is not None and safe_parse_float(e.get('checkout_time')) > 60.0)
                 for e in evs
             )
-        return 'checkout' in s['reached']
 
-    before_comp_affected = sum(1 for sid in before_dropoff_sids if abandoned_during_checkout(session_events.get(sid, [])))
-    after_comp_affected = sum(1 for sid in after_dropoff_sids if abandoned_during_checkout(session_events.get(sid, [])))
-    total_comp_affected = after_comp_affected
-
-    if checkout_step_telemetry:
-        status = 'CONFIRMED' if after_comp_affected > 0 else 'NOT DETECTED'
+        before_comp_affected = sum(1 for sid in before_dropoff_sids if abandoned_during_checkout(session_events.get(sid, [])))
+        after_comp_affected = sum(1 for sid in after_dropoff_sids if abandoned_during_checkout(session_events.get(sid, [])))
+        total_comp_affected = after_comp_affected
+        status = 'CONFIRMED' if (after_comp_affected > 0 or before_comp_affected > 0) else 'NOT DETECTED'
         before_ev_text = f"{before_comp_affected} drop-off session(s) exceeded checkout step/time threshold" if before_comp_affected > 0 else "0 lengthy checkout sessions in before period"
         after_ev_text = f"{after_comp_affected} drop-off session(s) exceeded checkout step/time threshold" if after_comp_affected > 0 else "0 lengthy checkout sessions in after period"
         obs = f"{total_comp_affected} drop-off session(s) encountered lengthy checkout steps or duration." if total_comp_affected > 0 else "Checkout step telemetry monitored; within normal limits."
-    elif after_comp_affected > 0 or before_comp_affected > 0:
-        status = 'SUPPORTED'
-        before_ev_text = f"{before_comp_affected} session(s) abandoned during checkout (Before)"
-        after_ev_text = f"{after_comp_affected} drop-off session(s) abandoned during checkout (After)"
-        obs = f"{total_comp_affected} drop-off session(s) abandoned during checkout process (Cart &rarr; Checkout &rarr; Paid progression friction)."
+        comp_breakdown = calc_reason_breakdowns(abandoned_during_checkout, ['all', 'checkout', 'paid'])
     else:
-        status = 'NOT DETECTED'
-        before_ev_text = "0 checkout abandonment sessions in before period"
-        after_ev_text = "0 checkout abandonment sessions in after period"
-        obs = "No drop-off observed during checkout stage."
-
-    comp_breakdown = calc_reason_breakdowns(abandoned_during_checkout, ['all', 'checkout', 'cart', 'paid'])
+        total_comp_affected = 0
+        before_comp_affected = 0
+        after_comp_affected = 0
+        status = 'INSUFFICIENT DATA'
+        before_ev_text = "Uninstrumented (checkout_steps & checkout_time fields missing)"
+        after_ev_text = "Uninstrumented (no checkout step count or duration telemetry captured)"
+        obs = "checkout_steps and checkout_time fields are absent in the dataset."
+        comp_breakdown = {'by_device': {}, 'by_stage': {}, 'by_device_and_stage': {}}
 
     reasons.append({
         'id': 'complicated_checkout',
@@ -468,9 +469,10 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
         'affected_sessions': total_comp_affected,
         'before_affected': before_comp_affected,
         'after_affected': after_comp_affected,
+        'total_affected': before_comp_affected + after_comp_affected,
         'before_evidence': before_ev_text,
         'after_evidence': after_ev_text,
-        'evidence_present': bool(checkout_step_telemetry or total_comp_affected > 0 or before_comp_affected > 0),
+        'evidence_present': checkout_step_telemetry,
         'funnel_stage': 'cart to checkout',
         'observation': obs,
         'recommended_action': action_complicated,
@@ -496,7 +498,7 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
         med_b = f"{median(b_times):.2f}s" if b_times else "N/A"
         med_a = f"{median(a_times):.2f}s" if a_times else "N/A"
 
-        status = 'SUPPORTED' if after_slow > 0 else 'NOT DETECTED'
+        status = 'SUPPORTED' if (after_slow > 0 or before_slow > 0) else 'NOT DETECTED'
         before_ev_text = f"{before_slow} drop-off session(s) > {slow_threshold:.2f}s (median: {med_b})"
         after_ev_text = f"{after_slow} drop-off session(s) > {slow_threshold:.2f}s (median: {med_a})"
         obs = f"{total_load_affected} drop-off session(s) exceeded the slow threshold of {slow_threshold:.2f}s." if total_load_affected > 0 else "Page load monitoring active; all sessions within normal speed."
@@ -518,6 +520,7 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
         'affected_sessions': total_load_affected,
         'before_affected': before_slow,
         'after_affected': after_slow,
+        'total_affected': before_slow + after_slow,
         'before_evidence': before_ev_text,
         'after_evidence': after_ev_text,
         'evidence_present': load_evidence,
@@ -530,40 +533,50 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
 
     # 5. Window Shopping
     action_window = "Engage browsing visitors with personalized product recommendations, clear value propositions, and exit-intent prompts to encourage adding items to cart."
-    has_browse_telemetry = any(clean(e.get('intent')) in ('browse', 'window_shopping', 'compare') for e in normalized)
-
-    def is_window_shopping(evs):
-        sid = evs[0]['session_id'] if evs else None
-        if not sid or sid not in session_row_by_id:
-            return False
-        s = session_row_by_id[sid]
-        if 'cart' in s['reached']:
-            return False
-        if has_browse_telemetry:
-            return any(clean(e.get('intent')) in ('browse', 'window_shopping', 'compare') for e in evs)
-        return s['reached'] == {'visit'}
-
-    before_win_affected = sum(1 for sid in before_dropoff_sids if is_window_shopping(session_events.get(sid, [])))
-    after_win_affected = sum(1 for sid in after_dropoff_sids if is_window_shopping(session_events.get(sid, [])))
-    total_win_affected = after_win_affected
+    has_browse_telemetry = any(
+        bool(e.get('intent')) or
+        bool(e.get('browse_only')) or
+        safe_parse_float(e.get('dwell_time')) is not None or
+        safe_parse_float(e.get('page_views')) is not None or
+        safe_parse_float(e.get('product_views')) is not None or
+        e.get('step') in ('view_item', 'product_view', 'search', 'browse', 'category')
+        for e in normalized
+    )
 
     if has_browse_telemetry:
-        status_win = 'CONFIRMED' if after_win_affected > 0 else 'NOT DETECTED'
+        def is_window_shopping(evs):
+            sid = evs[0]['session_id'] if evs else None
+            if not sid or sid not in session_row_by_id:
+                return False
+            s = session_row_by_id[sid]
+            if 'cart' in s['reached']:
+                return False
+            return any(
+                clean(e.get('intent')) in ('browse', 'window_shopping', 'compare') or
+                bool(e.get('browse_only')) or
+                (safe_parse_float(e.get('dwell_time')) or 0) > 60 or
+                (safe_parse_float(e.get('page_views')) or 0) > 3 or
+                (safe_parse_float(e.get('product_views')) or 0) > 2
+                for e in evs
+            )
+
+        before_win_affected = sum(1 for sid in before_dropoff_sids if is_window_shopping(session_events.get(sid, [])))
+        after_win_affected = sum(1 for sid in after_dropoff_sids if is_window_shopping(session_events.get(sid, [])))
+        total_win_affected = after_win_affected
+        status_win = 'SUPPORTED' if (after_win_affected > 0 or before_win_affected > 0) else 'NOT DETECTED'
         before_win_ev = f"{before_win_affected} session(s) identified with window shopping / browse intent (Before)" if before_win_affected > 0 else "0 window shopping sessions in before period"
         after_win_ev = f"{after_win_affected} drop-off session(s) identified with window shopping / browse intent (After)" if after_win_affected > 0 else "0 window shopping sessions in after period"
         obs_win = f"{total_win_affected} drop-off session(s) browsing/comparing without adding items to cart." if total_win_affected > 0 else "Browsing intent telemetry within normal baseline."
-    elif after_win_affected > 0 or before_win_affected > 0:
-        status_win = 'SUPPORTED'
-        before_win_ev = f"{before_win_affected} session(s) explored at Visit stage without adding to cart (Before)"
-        after_win_ev = f"{after_win_affected} drop-off session(s) explored at Visit stage without adding to cart (After)"
-        obs_win = f"{total_win_affected} drop-off session(s) abandoned during initial browsing (Visit &rarr; Cart exploration drop-off)."
+        win_breakdown = calc_reason_breakdowns(is_window_shopping, ['all', 'visit'])
     else:
-        status_win = 'NOT DETECTED'
-        before_win_ev = "0 drop-offs at Visit stage in before period"
-        after_win_ev = "0 drop-offs at Visit stage in after period"
-        obs_win = "Initial browsing progression stable; 100% of visitors reached Cart stage."
-
-    win_breakdown = calc_reason_breakdowns(is_window_shopping, ['all', 'visit'])
+        total_win_affected = 0
+        before_win_affected = 0
+        after_win_affected = 0
+        status_win = 'INSUFFICIENT DATA'
+        before_win_ev = "Uninstrumented (browsing intent & page exploration fields missing in dataset)"
+        after_win_ev = "Uninstrumented (no window shopping/exploratory telemetry captured)"
+        obs_win = "Browsing intent and product view exploration fields are absent in the dataset."
+        win_breakdown = {'by_device': {}, 'by_stage': {}, 'by_device_and_stage': {}}
 
     reasons.append({
         'id': 'window_shopping',
@@ -572,9 +585,10 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
         'affected_sessions': total_win_affected,
         'before_affected': before_win_affected,
         'after_affected': after_win_affected,
+        'total_affected': before_win_affected + after_win_affected,
         'before_evidence': before_win_ev,
         'after_evidence': after_win_ev,
-        'evidence_present': bool(has_browse_telemetry or total_win_affected > 0 or before_win_affected > 0),
+        'evidence_present': has_browse_telemetry,
         'funnel_stage': 'visit to cart',
         'observation': obs_win,
         'recommended_action': action_window,
@@ -584,41 +598,49 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
 
     # 6. No Discounts / Offers
     action_discounts = "Introduce first-purchase promo banners, test automated cart-level discount thresholds (e.g., $10 off $50), and provide visible coupon code discovery."
-    has_discount_telemetry = any(bool(e.get('discount_code')) or safe_parse_float(e.get('discount_amount')) is not None for e in normalized)
-
-    def abandoned_without_discount(evs):
-        sid = evs[0]['session_id'] if evs else None
-        if not sid or sid not in session_row_by_id:
-            return False
-        s = session_row_by_id[sid]
-        if 'paid' in s['reached']:
-            return False
-        if has_discount_telemetry:
-            has_disc = any(safe_parse_float(e.get('discount_amount', 0)) and safe_parse_float(e.get('discount_amount', 0)) > 0 for e in evs)
-            return 'cart' in s['reached'] and not has_disc
-        return 'cart' in s['reached'] and 'checkout' not in s['reached']
-
-    before_disc_affected = sum(1 for sid in before_dropoff_sids if abandoned_without_discount(session_events.get(sid, [])))
-    after_disc_affected = sum(1 for sid in after_dropoff_sids if abandoned_without_discount(session_events.get(sid, [])))
-    total_disc_affected = after_disc_affected
+    has_discount_telemetry = any(
+        bool(e.get('coupon_code')) or
+        bool(e.get('discount_code')) or
+        bool(e.get('promo_code')) or
+        bool(e.get('coupon')) or
+        bool(e.get('coupon_error')) or
+        safe_parse_float(e.get('discount_amount')) is not None or
+        safe_parse_float(e.get('discount')) is not None
+        for e in normalized
+    )
 
     if has_discount_telemetry:
-        status_disc = 'CONFIRMED' if after_disc_affected > 0 else 'NOT DETECTED'
-        before_disc_ev = f"{before_disc_affected} session(s) dropped off without discount/offer (Before)" if before_disc_affected > 0 else "0 discount-related drop-offs in before period"
-        after_disc_ev = f"{after_disc_affected} drop-off session(s) dropped off without discount/offer (After)" if after_disc_affected > 0 else "0 discount-related drop-offs in after period"
-        obs_disc = f"{total_disc_affected} drop-off session(s) abandoned without redeeming an offer or discount." if total_disc_affected > 0 else "Promotional discount coverage healthy."
-    elif after_disc_affected > 0 or before_disc_affected > 0:
-        status_disc = 'SUPPORTED'
-        before_disc_ev = f"{before_disc_affected} session(s) abandoned at Cart stage without applied discounts/offers (Before)"
-        after_disc_ev = f"{after_disc_affected} drop-off session(s) abandoned at Cart stage without applied discounts/offers (After)"
-        obs_disc = f"{total_disc_affected} drop-off session(s) abandoned at Cart stage where pricing/discounts are evaluated without an offer."
-    else:
-        status_disc = 'NOT DETECTED'
-        before_disc_ev = "0 drop-offs at Cart stage in before period"
-        after_disc_ev = "0 drop-offs at Cart stage in after period"
-        obs_disc = "Cart-to-checkout progression stable; 0 drop-offs at Cart stage."
+        def abandoned_without_discount(evs):
+            sid = evs[0]['session_id'] if evs else None
+            if not sid or sid not in session_row_by_id:
+                return False
+            s = session_row_by_id[sid]
+            if 'paid' in s['reached'] or 'cart' not in s['reached']:
+                return False
+            return any(
+                bool(e.get('coupon_error')) or
+                (safe_parse_float(e.get('discount_amount')) is not None and safe_parse_float(e.get('discount_amount')) == 0) or
+                (safe_parse_float(e.get('discount')) is not None and safe_parse_float(e.get('discount')) == 0)
+                for e in evs
+            )
 
-    disc_breakdown = calc_reason_breakdowns(abandoned_without_discount, ['all', 'cart', 'checkout'])
+        before_disc_affected = sum(1 for sid in before_dropoff_sids if abandoned_without_discount(session_events.get(sid, [])))
+        after_disc_affected = sum(1 for sid in after_dropoff_sids if abandoned_without_discount(session_events.get(sid, [])))
+        total_disc_affected = after_disc_affected
+        status_disc = 'SUPPORTED' if (after_disc_affected > 0 or before_disc_affected > 0) else 'NOT DETECTED'
+        before_disc_ev = f"{before_disc_affected} session(s) dropped off with coupon/discount issue (Before)" if before_disc_affected > 0 else "0 discount-related drop-offs in before period"
+        after_disc_ev = f"{after_disc_affected} drop-off session(s) dropped off with coupon/discount issue (After)" if after_disc_affected > 0 else "0 discount-related drop-offs in after period"
+        obs_disc = f"{total_disc_affected} drop-off session(s) abandoned without redeeming an offer or discount." if total_disc_affected > 0 else "Promotional discount coverage healthy."
+        disc_breakdown = calc_reason_breakdowns(abandoned_without_discount, ['all', 'cart', 'checkout'])
+    else:
+        total_disc_affected = 0
+        before_disc_affected = 0
+        after_disc_affected = 0
+        status_disc = 'INSUFFICIENT DATA'
+        before_disc_ev = "Uninstrumented (coupon & discount fields missing in dataset)"
+        after_disc_ev = "Uninstrumented (no promotional offer telemetry captured)"
+        obs_disc = "Coupon, discount, and promotional offer fields are absent in the dataset."
+        disc_breakdown = {'by_device': {}, 'by_stage': {}, 'by_device_and_stage': {}}
 
     reasons.append({
         'id': 'no_discounts_offers',
@@ -627,9 +649,10 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
         'affected_sessions': total_disc_affected,
         'before_affected': before_disc_affected,
         'after_affected': after_disc_affected,
+        'total_affected': before_disc_affected + after_disc_affected,
         'before_evidence': before_disc_ev,
         'after_evidence': after_disc_ev,
-        'evidence_present': bool(has_discount_telemetry or total_disc_affected > 0 or before_disc_affected > 0),
+        'evidence_present': has_discount_telemetry,
         'funnel_stage': 'cart to checkout',
         'observation': obs_disc,
         'recommended_action': action_discounts,
