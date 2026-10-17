@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Checkout Drop-Off Investigator (C18)</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script src="/static/vendor/chart.umd.min.js"></script>
+</head>
+<body>
+  <!-- Fixed Left Sidebar (~320px) -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <span class="brand-badge">Case C18</span>
+      <h2>Checkout Drop-Off<br>Investigator</h2>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a href="#overview" class="nav-link active" data-page="page-overview">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+        Overview
+      </a>
+      <a href="#funnel" class="nav-link" data-page="page-funnel">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"></path></svg>
+        Funnel Analysis
+      </a>
+      <a href="#device" class="nav-link" data-page="page-device">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+        Device Comparison
+      </a>
+      <a href="#investigation" class="nav-link" data-page="page-investigation">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        Investigation Panel
+      </a>
+      <a href="#quality" class="nav-link" data-page="page-quality">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+        Data Quality & Checks
+      </a>
+      <a href="#upload" class="nav-link" data-page="page-upload">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+        Upload Dataset
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="demo-tag">
+        <span style="font-size: 14px;">●</span> SYNTHETIC DEMO DATA
+      </div>
+      <p style="margin-top: 8px; color: #64748b;">Engineered for C18 Funnel Drop-off Analysis</p>
+    </div>
+  </aside>
+
+  <!-- Main Content Area -->
+  <main class="main-content">
+    <!-- Top Header -->
+    <header class="top-header">
+      <div class="title-area">
+        <h1 id="pageHeadingTitle">
+          Checkout Drop-Off Investigator
+          <span class="badge-pill badge-neutral" style="font-size: 0.8rem; font-weight: normal; vertical-align: middle;">SYNTHETIC DEMO DATA</span>
+        </h1>
+        <p class="subtitle" id="pageHeadingSubtitle">Find where customers drop out of the checkout funnel and identify which segment needs investigation.</p>
+      </div>
+      <div class="header-actions">
+        <button id="refreshBtn" class="btn btn-secondary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+          Refresh Analysis
+        </button>
+        <button id="exportBtn" class="btn btn-primary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          Download Analysis (JSON)
+        </button>
+      </div>
+    </header>
+
+    <!-- Global Interactive Filters Bar -->
+    <section class="filter-bar">
+      <div class="filter-group">
+        <span class="filter-label">Period:</span>
+        <div class="pill-group" id="periodFilter">
+          <button class="pill-btn active" data-val="comparison">Comparison (Before vs After)</button>
+          <button class="pill-btn" data-val="before">Before</button>
+          <button class="pill-btn" data-val="after">After</button>
+        </div>
+      </div>
+
+      <div class="filter-group">
+        <span class="filter-label">Device:</span>
+        <div class="pill-group" id="deviceFilter">
+          <button class="pill-btn active" data-val="all">All Devices</button>
+          <button class="pill-btn" data-val="desktop">Desktop</button>
+          <button class="pill-btn" data-val="mobile">Mobile</button>
+        </div>
+      </div>
+
+      <div class="filter-group">
+        <span class="filter-label">Stage Focus:</span>
+        <div class="pill-group" id="stageFilter">
+          <button class="pill-btn active" data-val="all">Full Funnel</button>
+          <button class="pill-btn" data-val="visit">Visit</button>
+          <button class="pill-btn" data-val="cart">Cart</button>
+          <button class="pill-btn" data-val="checkout">Checkout</button>
+          <button class="pill-btn" data-val="paid">Paid</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================================================
+         PAGE VIEW: OVERVIEW (Comprehensive Executive View)
+         ========================================================================== -->
+    <div id="page-overview" class="page-view active-page">
+      <!-- 6 Executive Summary Metric Cards inside Overview -->
+      <section class="metric-grid">
+        <div class="metric-card">
+          <span class="metric-header">Before Paid Conv.</span>
+          <div class="metric-value" id="cardBeforePaid">--%</div>
+          <div class="metric-sub text-muted" id="cardBeforePaidSub">Visit → Paid</div>
+        </div>
+
+        <div class="metric-card">
+          <span class="metric-header">After Paid Conv.</span>
+          <div class="metric-value" id="cardAfterPaid">--%</div>
+          <div class="metric-sub text-muted" id="cardAfterPaidSub">Visit → Paid</div>
+        </div>
+
+        <div class="metric-card">
+          <span class="metric-header">Overall Change</span>
+          <div class="metric-value" id="cardOverallChange">-- pp</div>
+          <div class="metric-sub" id="cardOverallChangeSub">
+            <span class="badge-pill badge-neutral">Net Impact</span>
+          </div>
+        </div>
+
+        <div class="metric-card" style="border-left: 4px solid var(--danger);">
+          <span class="metric-header">Largest Declining Segment</span>
+          <div class="metric-value" id="cardAffectedSegment" style="color: var(--danger);">--</div>
+          <div class="metric-sub" id="cardAffectedSub">
+            <span class="badge-pill badge-danger" id="cardAffectedBadge">-- pp</span>
+          </div>
+        </div>
+
+        <div class="metric-card">
+          <span class="metric-header">Sessions Analysed</span>
+          <div class="metric-value" id="cardTotalSessions">--</div>
+          <div class="metric-sub text-muted" id="cardSessionsSub">Before: -- | After: --</div>
+        </div>
+
+        <div class="metric-card">
+          <span class="metric-header">Duplicates Removed</span>
+          <div class="metric-value" id="cardDuplicates">--</div>
+          <div class="metric-sub text-muted" id="cardDuplicatesSub">From -- raw events</div>
+        </div>
+      </section>
+
+      <!-- Funnel Progression Card -->
+      <section class="dashboard-card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">Funnel Progression Analysis</h3>
+            <p class="card-desc">Session progression through declared stages: Visit → Cart → Checkout → Paid</p>
+          </div>
+          <span class="badge-pill badge-neutral" id="overviewFunnelBadge">All Devices</span>
+        </div>
+        <div class="card-body">
+          <div class="two-col">
+            <div>
+              <div class="chart-container">
+                <canvas id="overviewFunnelChart"></canvas>
+              </div>
+            </div>
+            <div>
+              <div class="data-table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Funnel Stage</th>
+                      <th>Before Sessions</th>
+                      <th>After Sessions</th>
+                      <th>Stage Retention</th>
+                      <th>Cumulative Conv.</th>
+                    </tr>
+                  </thead>
+                  <tbody id="overviewFunnelTableBody">
+                    <!-- Populated dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="callout callout-info" id="overviewFunnelInsight" style="margin-top: 18px;">
+            <strong>Funnel Progression Observation:</strong> Loading analysis insights...
+          </div>
+        </div>
+      </section>
+
+      <!-- Device Comparison Card -->
+      <section class="dashboard-card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">Device Comparison (Desktop vs Mobile)</h3>
+            <p class="card-desc">Conversion metrics across device segments calculated directly from session counts.</p>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="two-col">
+            <div>
+              <div class="chart-container">
+                <canvas id="overviewDeviceChart"></canvas>
+              </div>
+            </div>
+            <div>
+              <div class="data-table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Device</th>
+                      <th>Before (Paid / Visit)</th>
+                      <th>After (Paid / Visit)</th>
+                      <th>Change</th>
+                      <th>Sample Flag</th>
+                    </tr>
+                  </thead>
+                  <tbody id="overviewDeviceTableBody">
+                    <!-- Populated dynamically -->
+                  </tbody>
+                </table>
+              </div>
+              <div class="callout callout-warning">
+                <strong>Low Volume Warning:</strong> Segments with fewer than 30 sessions are marked as low volume. Conclusions drawn from small samples require caution and further testing.
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Evidence / Investigation Card in Overview -->
+      <section class="dashboard-card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">Investigation Findings & Recommendations</h3>
+            <p class="card-desc">Summary of observed drop-offs and recommended next steps</p>
+          </div>
+          <span class="badge-pill badge-danger" id="overviewAffectedBadge">Desktop Segment</span>
+        </div>
+        <div class="card-body">
+          <div class="evidence-card">
+            <span class="hypothesis-tag">Possible reason (hypothesis, not proven)</span>
+            <h4 id="overviewEvidenceHeadline" style="font-size: 1.1rem; color: #0f172a; margin-bottom: 8px;">
+              Investigating Desktop Checkout Collapse
+            </h4>
+            <p id="overviewEvidenceContent" style="color: #475569; font-size: 0.925rem; line-height: 1.6;">
+              Loading evidence summary...
+            </p>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ==========================================================================
+         PAGE VIEW: FUNNEL ANALYSIS
+         ========================================================================== -->
+    <div id="page-funnel" class="page-view">
+      <section class="dashboard-card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">Funnel Progression Analysis</h3>
+            <p class="card-desc">Detailed step-by-step conversion analysis across Visit, Cart, Checkout, and Paid stages.</p>
+          </div>
+          <span class="badge-pill badge-neutral" id="funnelFilterBadge">All Devices</span>
+        </div>
+        <div class="card-body">
+          <div class="two-col">
+            <div>
+              <div class="chart-container">
+                <canvas id="funnelChart"></canvas>
+              </div>
+            </div>
+            <div>
+              <div class="data-table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Funnel Stage</th>
+                      <th>Before Sessions</th>
+                      <th>After Sessions</th>
+                      <th>Stage Retention</th>
+                      <th>Cumulative Conv.</th>
+                    </tr>
+                  </thead>
+                  <tbody id="funnelTableBody">
+                    <!-- Populated dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="callout callout-info" id="funnelInsightCallout" style="margin-top: 20px;">
+            <strong>Funnel Observation:</strong> Loading analysis insights...
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ==========================================================================
+         PAGE VIEW: DEVICE COMPARISON
+         ========================================================================== -->
+    <div id="page-device" class="page-view">
+      <section class="dashboard-card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">Device Segment Comparison</h3>
+            <p class="card-desc">Comparing Desktop vs Mobile drop-off rates without averaging segment percentages.</p>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="two-col">
+            <div>
+              <div class="chart-container">
+                <canvas id="deviceChart"></canvas>
+              </div>
+            </div>
+            <div>
+              <div class="data-table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Device</th>
+                      <th>Before (Paid / Visit)</th>
+                      <th>After (Paid / Visit)</th>
+                      <th>Change</th>
+                      <th>Sample Flag</th>
+                    </tr>
+                  </thead>
+                  <tbody id="deviceTableBody">
+                    <!-- Populated dynamically -->
+                  </tbody>
+                </table>
+              </div>
+              <div class="callout callout-warning">
+                <strong>Low Volume Warning:</strong> Segments with fewer than 30 sessions are marked as low volume. Conclusions drawn from small samples require caution and further testing.
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ==========================================================================
+         PAGE VIEW: INVESTIGATION PANEL
+         ========================================================================== -->
+    <div id="page-investigation" class="page-view">
+      <section class="dashboard-card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">Why should we investigate this segment?</h3>
+            <p class="card-desc">Evidence-based drop-off breakdown and investigation rationales</p>
+          </div>
+          <span class="badge-pill badge-danger" id="investigationTargetBadge">Desktop Segment</span>
+        </div>
+        <div class="card-body">
+          <div class="evidence-card" id="evidenceCard">
+            <span class="hypothesis-tag">Possible reason (hypothesis, not proven)</span>
+            <h4 id="evidenceHeadline" style="font-size: 1.15rem; color: #0f172a; margin-bottom: 10px;">
+              Investigating Desktop Checkout Collapse
+            </h4>
+            <p id="evidenceContent" style="color: #475569; font-size: 0.95rem; line-height: 1.65;">
+              Loading evidence summary...
+            </p>
+          </div>
+
+          <div class="two-col" style="margin-top: 24px;">
+            <div style="background: #f8fafc; padding: 20px; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+              <h5 style="color: #1e293b; font-size: 1rem; margin-bottom: 10px;">Funnel Stage Loss Breakdown (After Period)</h5>
+              <ul id="stageLossList" style="padding-left: 20px; font-size: 0.9rem; color: #475569; line-height: 1.8;">
+                <!-- Populated dynamically -->
+              </ul>
+            </div>
+
+            <div style="background: #f8fafc; padding: 20px; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+              <h5 style="color: #1e293b; font-size: 1rem; margin-bottom: 10px;">Investigation Recommendation</h5>
+              <p id="investigationRecommendation" style="font-size: 0.9rem; color: #475569; line-height: 1.65;">
+                Loading recommendation...
+              </p>
+            </div>
+          <!-- Timestamp & Stage Timing Finding Callout -->
+          <div class="callout callout-info" id="timingFindingCallout" style="margin-top: 20px;">
+            <strong>Timestamp & Timing Evidence:</strong> Loading timing interval analysis...
+          </div>
+
+          <!-- Dedicated Reason Investigation Results Section -->
+          <div style="margin-top: 24px;">
+            <div style="padding: 16px 0 12px 0; border-bottom: 1px solid var(--border-color); margin-bottom: 16px;">
+              <h4 style="font-size: 1.05rem; color: #0f172a; margin-bottom: 4px;">Possible Reasons & Supporting Evidence</h4>
+              <p style="font-size: 0.85rem; color: #64748b; margin: 0;">Automated evidence scan across payment failures, delivery charges, checkout errors, and load times.</p>
+            </div>
+            <div class="data-table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Reason Category</th>
+                    <th>Status</th>
+                    <th>Affected Sessions</th>
+                    <th>Funnel Stage</th>
+                    <th>Recommended Next Steps</th>
+                  </tr>
+                </thead>
+                <tbody id="reasonInvestigationTableBody">
+                  <!-- Populated dynamically from currentAnalysis.reason_investigation -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ==========================================================================
+         PAGE VIEW: DATA QUALITY & CHECKS
+         ========================================================================== -->
+    <div id="page-quality" class="page-view">
+      <section class="dashboard-card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">Data Quality & Validation Scorecard</h3>
+            <p class="card-desc">Verification against declared expected values and instrumentation audits</p>
+          </div>
+          <span class="badge-pill badge-success" id="validationScoreBadge">12 / 12 Checks Passed</span>
+        </div>
+        <div class="card-body">
+          <div class="two-col">
+            <div>
+              <h4 style="font-size: 1rem; margin-bottom: 14px; color: #1e293b;">Audit & Instrumentation Status</h4>
+              <div class="data-table-wrapper">
+                <table class="data-table">
+                  <tbody id="qualityTableBody">
+                    <!-- Populated dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div>
+              <h4 style="font-size: 1rem; margin-bottom: 14px; color: #1e293b;">Fixture Expected Benchmark Checks</h4>
+              <div class="data-table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Rule / Metric</th>
+                      <th>Expected</th>
+                      <th>Actual</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="checksTableBody">
+                    <!-- Populated dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ==========================================================================
+         PAGE VIEW: UPLOAD DATASET
+         ========================================================================== -->
+    <div id="page-upload" class="page-view">
+      <section class="dashboard-card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">Upload New Dataset</h3>
+            <p class="card-desc">Analyze custom event logs in CSV or JSON format via <code>POST /api/upload</code></p>
+          </div>
+          <button id="resetFixtureBtn" class="btn btn-secondary btn-sm">
+            Reset to C18 Fixture
+          </button>
+        </div>
+        <div class="card-body">
+          <form id="uploadForm">
+            <div class="upload-zone" id="dropZone">
+              <div class="upload-icon">📁</div>
+              <h4 style="font-size: 1.05rem; color: #1e293b; margin-bottom: 6px;">Choose CSV or JSON event file to analyze</h4>
+              <p style="font-size: 0.875rem; color: #64748b; margin-bottom: 18px;">
+                Required columns: <code>event_id, session_id, step, device</code> (optional: <code>time</code> or <code>event_time</code>)
+              </p>
+              <input type="file" id="fileInput" name="file" accept=".csv,.json" style="display: none;">
+              <button type="button" class="btn btn-secondary" onclick="document.getElementById('fileInput').click()">
+                Select File
+              </button>
+              <span id="selectedFileName" style="margin-left: 12px; font-size: 0.875rem; color: #2563eb; font-weight: 600;"></span>
+            </div>
+            <div style="margin-top: 18px; display: flex; justify-content: flex-end;">
+              <button type="submit" id="submitUploadBtn" class="btn btn-primary" disabled>
+                Upload & Re-Analyze
+              </button>
+            </div>
+          </form>
+
+          <div id="uploadStatusMsg" class="status-msg"></div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
