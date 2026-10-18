@@ -21,12 +21,13 @@ def index():
 
 
 from datetime import datetime
-from backend.live_generator import is_generator_running
+from backend.live_generator import is_generator_running, ensure_generator_running
 
 
 @api_bp.get('/api/analysis')
 def get_analysis():
     """Generate and return drop-off analysis for the active live dataset."""
+    ensure_generator_running(interval_seconds=3.0)
     try:
         events, fixture, is_builtin = repository.get_dataset()
         result = analyze(events, fixture_data=fixture, is_builtin=is_builtin)
@@ -229,6 +230,7 @@ def post_events():
 @api_bp.get('/api/live-events')
 def get_live_events():
     """Return recent live events and streaming status."""
+    ensure_generator_running(interval_seconds=3.0)
     try:
         limit = min(int(request.args.get('limit', 30)), 100)
     except (ValueError, TypeError):

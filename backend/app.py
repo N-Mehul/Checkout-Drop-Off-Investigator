@@ -31,8 +31,13 @@ def create_app(config_override: dict = None) -> Flask:
     app.register_blueprint(api_bp)
 
     # Start realistic live checkout event generator daemon
-    from .live_generator import start_live_generator
+    from .live_generator import start_live_generator, ensure_generator_running
     start_live_generator(interval_seconds=3.0)
+
+    @app.before_request
+    def _ensure_live_generator():
+        """Ensure live generator daemon is active in the worker process handling the request."""
+        ensure_generator_running(interval_seconds=3.0)
 
     # Initialize Gemini API key environment
     try:

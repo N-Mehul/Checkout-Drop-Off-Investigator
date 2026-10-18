@@ -1,14 +1,19 @@
 from __future__ import annotations
+import atexit
+import os
 import random
 import threading
 import time
 import uuid
 from datetime import datetime, timedelta
+from typing import Optional
 from database.repository import repository
 
-_generator_thread = None
-_generator_running = False
+_generator_thread: Optional[threading.Thread] = None
+_generator_running: bool = False
+_stop_event = threading.Event()
 _thread_lock = threading.Lock()
+_owner_pid: Optional[int] = None
 
 
 def generate_single_session_events() -> list:
@@ -129,40 +134,99 @@ def generate_single_session_events() -> list:
 
 def _generator_worker(interval_seconds: float = 3.0):
     """Background daemon loop generating live checkout traffic."""
-    global _generator_running
-    while _generator_running:
+    global _generator_running, _stop_event
+    pid = os.getpid()
+    print(f"[LiveGenerator] Worker loop started (pid: {pid}, interval: {interval_seconds}s)", flush=True)
+
+    while _generator_running and not _stop_event.is_set():
         try:
             session_events = generate_single_session_events()
-            repository.add_events(session_events)
-        except Exception as e:
-            print(f"[LiveGenerator] Error generating session: {e}")
-        time.sleep(interval_seconds)
+            if session_events:
+                repository.add_events(session_events)
+        except Exception as exc:
+            # Requirements 7 & 8: Exception handling inside loop, log error and continue
+            print(f"[LiveGenerator] ERROR: {exc}", flush=True)
+
+        # Interruptible wait; cleanly wakes up if stop_event is set
+        if _stop_event.wait(timeout=interval_seconds):
+            break
+
+    print(f"[LiveGenerator] Worker loop finished (pid: {pid})", flush=True)
 
 
-def start_live_generator(interval_seconds: float = 3.0):
-    """Start background live event generator daemon thread."""
-    global _generator_thread, _generator_running
+def is_generator_running() -> bool:
+    """Return whether the live generator thread is currently active in this process."""
+    global _generator_thread, _generator_running, _stop_event, _owner_pid
+    current_pid = os.getpid()
+    if _owner_pid != current_pid:
+        return False
     with _thread_lock:
-        if _generator_running and _generator_thread and _generator_thread.is_alive():
-            return
+        return bool(
+            _generator_running
+            and not _stop_event.is_set()
+            and _generator_thread is not None
+            and _generator_thread.is_alive()
+        )
+
+
+def start_live_generator(interval_seconds: float = 3.0) -> bool:
+    """
+    Start background live event generator daemon thread in current process.
+    Thread-safe and process-safe (re-initializes if process was forked by Gunicorn).
+    Returns True if a new thread was started, False if already active.
+    """
+    global _generator_thread, _generator_running, _stop_event, _owner_pid
+    current_pid = os.getpid()
+
+    with _thread_lock:
+        # Check if already active in this process
+        if (
+            _owner_pid == current_pid
+            and _generator_running
+            and not _stop_event.is_set()
+            and _generator_thread is not None
+            and _generator_thread.is_alive()
+        ):
+            return False
+
+        _stop_event.clear()
         _generator_running = True
+        _owner_pid = current_pid
+
         _generator_thread = threading.Thread(
             target=_generator_worker,
             args=(interval_seconds,),
             daemon=True,
-            name="LiveEventGenerator"
+            name=f"LiveEventGenerator-{current_pid}"
         )
         _generator_thread.start()
-        print("[LiveGenerator] Started background live event stream (interval: 3s).")
+        print(f"[LiveGenerator] Started background live event stream (interval: {interval_seconds}s)", flush=True)
+        return True
 
 
-def stop_live_generator():
-    """Stop the background live event generator."""
-    global _generator_running
+def ensure_generator_running(interval_seconds: float = 3.0) -> bool:
+    """
+    Ensure generator is active in current process. Starts it if not active.
+    Safe to call repeatedly across requests.
+    """
+    if not is_generator_running():
+        return start_live_generator(interval_seconds=interval_seconds)
+    return False
+
+
+def stop_live_generator(timeout: float = 2.0):
+    """Cleanly stop the background live event generator."""
+    global _generator_running, _stop_event, _generator_thread
     with _thread_lock:
         _generator_running = False
+        _stop_event.set()
+
+    if _generator_thread and _generator_thread.is_alive():
+        try:
+            _generator_thread.join(timeout=timeout)
+        except Exception:
+            pass
 
 
-def is_generator_running() -> bool:
-    """Return whether the live generator thread is currently active."""
-    return _generator_running and _generator_thread is not None and _generator_thread.is_alive()
+# Register clean shutdown on process exit
+atexit.register(stop_live_generator)
