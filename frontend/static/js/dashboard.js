@@ -267,8 +267,8 @@ function updateHeaderTag() {
     const isCustom = currentAnalysis && currentAnalysis.dataset_info && currentAnalysis.dataset_info.is_custom;
     const badgeHTML = isCustom 
       ? '<span class="badge-pill badge-primary" style="font-size: 0.8rem; font-weight: 600; vertical-align: middle; margin-left: 8px;">CUSTOM UPLOADED DATASET</span>'
-      : '<span class="badge-pill badge-neutral" style="font-size: 0.8rem; font-weight: normal; vertical-align: middle; margin-left: 8px;">SYNTHETIC DEMO DATA</span>';
-    titleEl.innerHTML = `${meta.title} ${badgeHTML}`;
+      : '';
+    titleEl.innerHTML = `${meta.title} ${badgeHTML}`.trim();
   }
   const subEl = document.getElementById('pageHeadingSubtitle');
   if (subEl) {
