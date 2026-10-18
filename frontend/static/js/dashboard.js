@@ -18,16 +18,20 @@ let currentPage = 'page-overview';
 // Page titles & subtitles for navigation header updates
 const PAGE_META = {
   'page-overview': {
-    title: 'Checkout Drop-Off Investigator',
-    subtitle: 'Find where customers drop out of the checkout funnel and identify which segment needs investigation.'
+    title: 'Overview',
+    subtitle: 'Executive summary of funnel conversion KPIs, live telemetry, and critical drop-off areas.'
   },
   'page-funnel': {
-    title: 'Funnel Analysis',
-    subtitle: 'Step-by-step session progression and retention across Visit, Cart, Checkout, and Paid stages.'
+    title: 'Funnel Progression Analysis',
+    subtitle: 'Session progression through declared stages: Visit → Cart → Checkout → Paid.'
   },
   'page-device': {
-    title: 'Device Comparison',
+    title: 'Device Segment Comparison',
     subtitle: 'Detailed drop-off comparison between Desktop and Mobile segments.'
+  },
+  'page-ai': {
+    title: 'AI Investigation',
+    subtitle: 'Automated forensic synthesis and root-cause evidence interpretation across complete checkout data.'
   },
   'page-investigation': {
     title: 'Investigation Panel',
@@ -47,6 +51,8 @@ const HASH_TO_PAGE = {
   '#overview': 'page-overview',
   '#funnel': 'page-funnel',
   '#device': 'page-device',
+  '#ai-investigation': 'page-ai',
+  '#ai': 'page-ai',
   '#investigation': 'page-investigation',
   '#quality': 'page-quality',
   '#upload': 'page-upload'
@@ -56,6 +62,7 @@ const PAGE_TO_HASH = {
   'page-overview': '#overview',
   'page-funnel': '#funnel',
   'page-device': '#device',
+  'page-ai': '#ai-investigation',
   'page-investigation': '#investigation',
   'page-quality': '#quality',
   'page-upload': '#upload'
@@ -63,7 +70,12 @@ const PAGE_TO_HASH = {
 
 document.addEventListener('DOMContentLoaded', () => {
   initEventListeners();
-  loadAnalysis();
+  loadDashboardData(false);
+
+  // Real-Time live auto-refresh: fetch GET /api/analysis every 5 seconds
+  setInterval(() => {
+    loadDashboardData(true);
+  }, 5000);
 
   // Check URL hash on initial load
   const initialHash = window.location.hash;
@@ -165,6 +177,45 @@ function initEventListeners() {
   });
 
   uploadForm.addEventListener('submit', handleUpload);
+
+  // AI Investigation triggers
+  const generateAiBtn = document.getElementById('generateAiBtn');
+  if (generateAiBtn) {
+    generateAiBtn.addEventListener('click', generateAiAnalysis);
+  }
+
+  const aiRetryBtn = document.getElementById('aiRetryBtn');
+  if (aiRetryBtn) {
+    aiRetryBtn.addEventListener('click', generateAiAnalysis);
+  }
+
+  const sidebarAiLink = document.getElementById('sidebarAiLink');
+  if (sidebarAiLink) {
+    sidebarAiLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      navigateToPage('page-ai', true);
+    });
+  }
+
+  const aiChangeFiltersBtn = document.getElementById('aiChangeFiltersBtn');
+  if (aiChangeFiltersBtn) {
+    aiChangeFiltersBtn.addEventListener('click', () => {
+      const filterScreen = document.getElementById('aiFilterScreen');
+      const resultsScreen = document.getElementById('aiResultsScreen');
+      if (resultsScreen) resultsScreen.style.display = 'none';
+      if (filterScreen) {
+        filterScreen.style.display = 'block';
+        filterScreen.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  }
+
+  const aiRefreshBtn = document.getElementById('aiRefreshBtn');
+  if (aiRefreshBtn) {
+    aiRefreshBtn.addEventListener('click', () => {
+      generateAiAnalysis(true);
+    });
+  }
 }
 
 // Navigation function to switch views cleanly
@@ -225,11 +276,34 @@ function updateHeaderTag() {
   }
 }
 
-// Fetch analysis from backend API
-async function loadAnalysis() {
+// Updates real-time live indicator pill in header
+function updateLiveIndicator(liveData, datasetInfo) {
+  const countEl = document.getElementById('liveEventCount');
+  const timeEl = document.getElementById('liveTimestamp');
+  
+  const totalEvents = (liveData && liveData.total_events != null)
+    ? liveData.total_events
+    : (datasetInfo && datasetInfo.total_events != null ? datasetInfo.total_events : 0);
+  
+  const timestamp = (liveData && liveData.timestamp)
+    ? liveData.timestamp
+    : new Date().toLocaleTimeString();
+
+  if (countEl) {
+    countEl.textContent = `Live Events: ${totalEvents}`;
+  }
+  if (timeEl) {
+    timeEl.textContent = `Last updated: ${timestamp}`;
+  }
+}
+
+// Fetch analysis from backend API (live real-time data source)
+async function loadDashboardData(isBackground = false) {
   const refreshBtn = document.getElementById('refreshBtn');
-  refreshBtn.disabled = true;
-  refreshBtn.textContent = 'Loading...';
+  if (!isBackground && refreshBtn) {
+    refreshBtn.disabled = true;
+    refreshBtn.textContent = 'Loading...';
+  }
 
   try {
     const res = await fetch('/api/analysis');
@@ -238,18 +312,30 @@ async function loadAnalysis() {
     }
     const data = await res.json();
     currentAnalysis = data;
+
+    // Update real-time live indicator
+    updateLiveIndicator(data.live, data.dataset_info);
+
+    // Recalculate and update all dashboard components with latest live data
     updateDashboard();
   } catch (err) {
     console.error('Failed to load analysis:', err);
-    showStatusMessage(`Failed to load analysis: ${err.message}`, 'error');
+    if (!isBackground) {
+      showStatusMessage(`Failed to load analysis: ${err.message}`, 'error');
+    }
   } finally {
-    refreshBtn.disabled = false;
-    refreshBtn.innerHTML = `
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-      Refresh Analysis
-    `;
+    if (!isBackground && refreshBtn) {
+      refreshBtn.disabled = false;
+      refreshBtn.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+        Refresh Analysis
+      `;
+    }
   }
 }
+
+// Backward-compatible alias
+const loadAnalysis = loadDashboardData;
 
 // Update all components when data or filters change
 function updateDashboard() {
@@ -591,11 +677,20 @@ function renderSummaryCards() {
     elSessionsSub.textContent = `Before: ${metrics.beforeSessions} | After: ${metrics.afterSessions}${devSuffix} (${metrics.stageTitle})`;
   }
 
-  // Card 6: Duplicates Removed
+  // Card 6: Telemetry & Live Ingestion / Duplicates
+  const elTotalEvents = document.getElementById('cardTotalEvents');
+  if (elTotalEvents) {
+    const rawCount = (currentAnalysis.live && currentAnalysis.live.total_events != null)
+      ? currentAnalysis.live.total_events
+      : (quality.raw_events || 0);
+    elTotalEvents.textContent = `${rawCount} Events`;
+  }
   const elDuplicates = document.getElementById('cardDuplicates');
   if (elDuplicates) elDuplicates.textContent = quality.duplicates_removed;
   const elDuplicatesSub = document.getElementById('cardDuplicatesSub');
-  if (elDuplicatesSub) elDuplicatesSub.textContent = `From ${quality.raw_events} raw events (${quality.unique_event_ids} unique)`;
+  if (elDuplicatesSub) {
+    elDuplicatesSub.textContent = `${quality.duplicates_removed} duplicates cleaned from ${quality.raw_events} raw`;
+  }
 }
 
 // 2. Funnel Section & Charts (Updates both Overview and Funnel Page)
@@ -1152,7 +1247,7 @@ function renderReasonInvestigationTable() {
       icon: '🛍️',
       matchKeys: ['window_shopping', 'window shopping', 'browse', 'window', 'browsing', 'comparison'],
       defaultStage: 'Visit → Cart',
-      relevantStages: ['all', 'visit'],
+      relevantStages: ['all', 'visit', 'cart'],
       defaultAction: 'Engage browsing visitors with personalized product recommendations, clear value propositions, and exit-intent prompts to encourage adding items to cart.'
     },
     {
@@ -1228,7 +1323,7 @@ function renderReasonInvestigationTable() {
       }
 
       // Dynamic status reflecting the applied filters
-      const isConfirmed = rawStatus === 'CONFIRMED' || meta.id === 'payment_failures';
+      const isConfirmed = rawStatus === 'CONFIRMED' || meta.id === 'payment_failures' || meta.id === 'window_shopping';
       if (!isStageRelevant) {
         status = 'NOT DETECTED';
       } else if (periodKey === 'before') {
@@ -1305,8 +1400,10 @@ function renderReasonInvestigationTable() {
         beforeEvidence = `${beforeCount} drop-off session(s) > 3.48s threshold${devNote}`;
         afterEvidence = `${afterCount} drop-off session(s) > 3.48s threshold${devNote}`;
       } else if (meta.id === 'window_shopping') {
-        beforeEvidence = `${beforeCount} session(s) with window shopping/browsing intent${devNote}`;
-        afterEvidence = `${afterCount} drop-off session(s) with window shopping/browsing intent${devNote}`;
+        const bPlural = beforeCount === 1 ? 'session' : 'sessions';
+        const aPlural = afterCount === 1 ? 'session' : 'sessions';
+        beforeEvidence = `${beforeCount} visit-only ${bPlural} did not progress to cart in the Before period${devNote}`;
+        afterEvidence = `${afterCount} visit-only ${aPlural} did not progress to cart in the After period${devNote}`;
       } else if (meta.id === 'no_discounts_offers') {
         beforeEvidence = `${beforeCount} session(s) abandoned with coupon/discount issue${devNote}`;
         afterEvidence = `${afterCount} drop-off session(s) with coupon/discount issue${devNote}`;
@@ -1522,3 +1619,511 @@ function escapeHTML(str) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
+
+// =============================================================================
+// AI Investigation Layer Controller
+// =============================================================================
+
+function getStatusBadge(status) {
+  const s = String(status || 'INSUFFICIENT DATA').toUpperCase().trim();
+  if (s === 'CONFIRMED') return '<span class="badge-status-confirmed">CONFIRMED</span>';
+  if (s === 'SUPPORTED') return '<span class="badge-status-supported">SUPPORTED</span>';
+  if (s === 'NOT DETECTED') return '<span class="badge-status-not-detected">NOT DETECTED</span>';
+  return '<span class="badge-status-insufficient">INSUFFICIENT DATA</span>';
+}
+
+function getPriorityBadge(priority) {
+  const p = String(priority || 'LOW').toUpperCase().trim();
+  if (p === 'HIGH') return '<span class="badge-priority-high">HIGH PRIORITY</span>';
+  if (p === 'MEDIUM') return '<span class="badge-priority-medium">MEDIUM PRIORITY</span>';
+  return '<span class="badge-priority-low">LOW PRIORITY</span>';
+}
+
+async function generateAiAnalysis(isRefresh = false) {
+  const btn = document.getElementById('generateAiBtn');
+  const refreshBtn = document.getElementById('aiRefreshBtn');
+  const loading = document.getElementById('aiLoadingIndicator');
+  const errorBox = document.getElementById('aiErrorContainer');
+  const errorMsg = document.getElementById('aiErrorMessage');
+  const filterScreen = document.getElementById('aiFilterScreen');
+  const resultsScreen = document.getElementById('aiResultsScreen');
+
+  const periodVal = document.getElementById('aiFilterPeriod')?.value || 'before_vs_after';
+  const deviceVal = document.getElementById('aiFilterDevice')?.value || 'all';
+  const stageVal = document.getElementById('aiFilterStage')?.value || 'all';
+  const scopeVal = document.getElementById('aiFilterScope')?.value || 'complete';
+
+  if (isRefresh && refreshBtn) {
+    refreshBtn.disabled = true;
+    refreshBtn.innerHTML = `<span class="ai-spinner" style="width: 14px; height: 14px; border-width: 2px; display: inline-block; vertical-align: middle;"></span> Refreshing live data...`;
+  } else if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="ai-spinner" style="width: 14px; height: 14px; border-width: 2px; display: inline-block; vertical-align: middle;"></span> Analyzing live telemetry...`;
+    if (filterScreen) filterScreen.style.display = 'none';
+    if (resultsScreen) resultsScreen.style.display = 'none';
+    if (loading) loading.style.display = 'flex';
+  }
+  if (errorBox) errorBox.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/ai-analysis', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        time_period: periodVal,
+        device: deviceVal,
+        stage: stageVal,
+        scope: scopeVal
+      })
+    });
+
+    if (!res.ok) {
+      throw new Error(`AI Analysis API returned status ${res.status}`);
+    }
+
+    const data = await res.json();
+
+    // 1. Update Filters Used Bar
+    const used = data.filters_applied || {};
+    const periodEl = document.getElementById('aiUsedPeriod');
+    const devEl = document.getElementById('aiUsedDevice');
+    const stageEl = document.getElementById('aiUsedStage');
+    const scopeEl = document.getElementById('aiUsedScope');
+
+    if (periodEl) periodEl.textContent = `Time Period: ${used.time_period_label || periodVal}`;
+    if (devEl) devEl.textContent = `Device: ${used.device_label || deviceVal}`;
+    if (stageEl) stageEl.textContent = `Stage: ${used.stage_label || stageVal}`;
+    if (scopeEl) scopeEl.textContent = `Scope: ${used.scope_label || scopeVal}`;
+
+    // 2. Update AI Data Snapshot Card (Evidence of current live data)
+    const snap = data.data_snapshot || {};
+    const snapLive = document.getElementById('snapLiveEvents');
+    const snapSess = document.getElementById('snapSessions');
+    const snapLatest = document.getElementById('snapLatestEvent');
+    const snapGen = document.getElementById('snapGeneratedAt');
+    const snapEngine = document.getElementById('snapAiEngine');
+
+    if (snapLive) snapLive.textContent = `${snap.live_event_count != null ? snap.live_event_count : (data.dataset_meta?.total_events || '--')} Events`;
+    if (snapSess) snapSess.textContent = `${snap.unique_session_count != null ? snap.unique_session_count : '--'} Sessions`;
+    if (snapLatest) snapLatest.textContent = snap.latest_event_timestamp || '--:--:--';
+    if (snapGen) snapGen.textContent = snap.analysis_generated_at || '--:--:--';
+    if (snapEngine) {
+      const eng = (data.ai_engine || 'deterministic').toLowerCase();
+      snapEngine.textContent = eng === 'gemini' ? 'Gemini 2.5 Flash' : 'Deterministic Engine';
+      snapEngine.className = eng === 'gemini' ? 'badge-pill badge-primary' : 'badge-pill badge-neutral';
+    }
+
+    const sPeriodEl = document.getElementById('snapFilterPeriod');
+    const sDevEl = document.getElementById('snapFilterDevice');
+    const sStageEl = document.getElementById('snapFilterStage');
+    const sScopeEl = document.getElementById('snapFilterScope');
+    if (sPeriodEl) sPeriodEl.textContent = `Time Period: ${used.time_period_label || periodVal}`;
+    if (sDevEl) sDevEl.textContent = `Device: ${used.device_label || deviceVal}`;
+    if (sStageEl) sStageEl.textContent = `Stage: ${used.stage_label || stageVal}`;
+    if (sScopeEl) sScopeEl.textContent = `Scope: ${used.scope_label || scopeVal}`;
+
+    // 3. Render 10 Canonical Sections
+    renderAiAnalysisResults(data);
+
+    if (resultsScreen) {
+      resultsScreen.style.display = 'flex';
+      if (!isRefresh) {
+        resultsScreen.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+  } catch (err) {
+    console.error('Failed to generate AI analysis:', err);
+    if (!isRefresh && filterScreen) filterScreen.style.display = 'block';
+    if (errorBox && errorMsg) {
+      errorMsg.textContent = `AI Analysis failed: ${err.message || 'Server error'}. Please retry.`;
+      errorBox.style.display = 'flex';
+    }
+  } finally {
+    if (loading) loading.style.display = 'none';
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `<span class="ai-btn-sparkle">✨</span> Generate AI Investigation`;
+    }
+    if (refreshBtn) {
+      refreshBtn.disabled = false;
+      refreshBtn.innerHTML = `<span>🔄</span> Refresh &amp; Re-Analyze`;
+    }
+  }
+}
+
+function renderAiAnalysisResults(data) {
+  const container = document.getElementById('aiResultsContainer');
+  if (!container) return;
+
+  const conv = data.conversion_change || {};
+  const drop = data.biggest_drop_off || {};
+  const overall = data.overall_result || {};
+
+  // ---------------------------------------------------------------------------
+  // 1. EXECUTIVE SUMMARY
+  // ---------------------------------------------------------------------------
+  const sec1_ExecutiveSummary = `
+    <div class="ai-section-numbered-card">
+      <div class="ai-section-numbered-title">
+        <span class="ai-section-number-pill">1</span>
+        <span>EXECUTIVE SUMMARY</span>
+      </div>
+      <div style="font-size: 0.95rem; line-height: 1.65; color: #1e293b;">
+        ${escapeHTML(data.executive_summary || 'No summary generated.')}
+      </div>
+    </div>
+  `;
+
+  // ---------------------------------------------------------------------------
+  // 2. OVERALL RESULT
+  // ---------------------------------------------------------------------------
+  const chg = overall.change != null ? overall.change : (conv.change_percentage_points != null ? conv.change_percentage_points : 0);
+  const chgSign = chg > 0 ? '+' : '';
+  const chgColor = chg < 0 ? 'var(--danger)' : (chg > 0 ? 'var(--success)' : 'inherit');
+
+  const sec2_OverallResult = `
+    <div class="ai-section-numbered-card">
+      <div class="ai-section-numbered-title">
+        <span class="ai-section-number-pill">2</span>
+        <span>OVERALL RESULT</span>
+      </div>
+      <div class="ai-kpi-grid">
+        <div class="ai-kpi-card" style="border-left: 4px solid #64748b;">
+          <div class="ai-kpi-title">Before Conversion</div>
+          <div class="ai-kpi-val">${overall.before_conversion != null ? overall.before_conversion : '--'}%</div>
+          <div class="ai-kpi-sub">Baseline Visit &rarr; Paid reach</div>
+        </div>
+
+        <div class="ai-kpi-card" style="border-left: 4px solid var(--primary-blue);">
+          <div class="ai-kpi-title">After Conversion</div>
+          <div class="ai-kpi-val">${overall.after_conversion != null ? overall.after_conversion : '--'}%</div>
+          <div class="ai-kpi-sub">Active period Visit &rarr; Paid reach</div>
+        </div>
+
+        <div class="ai-kpi-card" style="border-left: 4px solid ${chgColor};">
+          <div class="ai-kpi-title">Conversion Change</div>
+          <div class="ai-kpi-val" style="color: ${chgColor};">${chgSign}${chg} pp</div>
+          <div class="ai-kpi-sub">Net conversion point shift</div>
+        </div>
+
+        <div class="ai-kpi-card" style="border-left: 4px solid ${chg < 0 ? 'var(--danger)' : 'var(--success)'};">
+          <div class="ai-kpi-title">Overall Status</div>
+          <div style="margin-top: 6px;">
+            <span class="badge-pill ${chg < 0 ? 'badge-danger' : 'badge-success'}" style="font-size: 0.85rem; font-weight: 700;">
+              ${escapeHTML(overall.overall_status || 'ANALYZED')}
+            </span>
+          </div>
+          <div class="ai-kpi-sub" style="margin-top: 6px;">${escapeHTML(overall.summary || '')}</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // ---------------------------------------------------------------------------
+  // 3. BIGGEST DROP-OFF
+  // ---------------------------------------------------------------------------
+  const sec3_BiggestDropOff = `
+    <div class="ai-section-numbered-card" style="border-left: 4px solid var(--danger);">
+      <div class="ai-section-numbered-title">
+        <span class="ai-section-number-pill" style="background: #fef2f2; color: var(--danger);">3</span>
+        <span style="color: var(--danger);">BIGGEST DROP-OFF</span>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 12px;">
+        <div style="background: #f8fafc; padding: 12px 16px; border-radius: 6px; border: 1px solid var(--border-color);">
+          <span class="ai-block-label">Funnel Stage</span>
+          <strong style="font-size: 1.1rem; color: #0f172a;">${escapeHTML(drop.stage || 'N/A')}</strong>
+        </div>
+        <div style="background: #f8fafc; padding: 12px 16px; border-radius: 6px; border: 1px solid var(--border-color);">
+          <span class="ai-block-label">Sessions Lost</span>
+          <strong style="font-size: 1.1rem; color: var(--danger);">${drop.sessions_lost != null ? drop.sessions_lost : (drop.affected_sessions || 0)} sessions</strong>
+        </div>
+        <div style="background: #f8fafc; padding: 12px 16px; border-radius: 6px; border: 1px solid var(--border-color);">
+          <span class="ai-block-label">Drop-off Rate</span>
+          <strong style="font-size: 1.1rem; color: var(--danger);">${drop.drop_off_percent != null ? drop.drop_off_percent : '--'}% step loss</strong>
+        </div>
+      </div>
+      <div class="ai-evidence-box">
+        <span class="ai-block-label" style="color: #475569;">Explanation:</span>
+        ${escapeHTML(drop.explanation || drop.description || '')}
+      </div>
+    </div>
+  `;
+
+  // ---------------------------------------------------------------------------
+  // 4. TOP FINDINGS (Max 3)
+  // ---------------------------------------------------------------------------
+  const topFindings = data.top_findings || [];
+  let findingsCardsHTML = '';
+  topFindings.slice(0, 3).forEach((item, idx) => {
+    findingsCardsHTML += `
+      <div class="ai-finding-card">
+        <div class="ai-finding-header">
+          <div class="ai-finding-title">#${idx + 1}. ${escapeHTML(item.title)}</div>
+          <div class="ai-badges-group">
+            ${getStatusBadge(item.status)}
+            ${getPriorityBadge(item.priority)}
+          </div>
+        </div>
+        <div class="ai-block-row" style="margin-top: 6px;">
+          <span class="ai-block-label">Description:</span>
+          ${escapeHTML(item.description)}
+        </div>
+        <div class="ai-block-row" style="margin-top: 6px;">
+          <span class="ai-block-label">Affected Sessions:</span>
+          <strong style="color: var(--danger); font-size: 0.95rem;">${item.affected_sessions != null ? item.affected_sessions : 0} sessions</strong>
+        </div>
+        <div class="ai-evidence-box" style="margin-top: 8px;">
+          <span class="ai-block-label" style="color: #4338ca;">Evidence:</span>
+          ${escapeHTML(item.evidence)}
+        </div>
+        ${item.recommendation ? `
+          <div class="ai-action-box" style="margin-top: 8px;">
+            <span class="ai-block-label" style="color: #15803d;">Recommended Action:</span>
+            ${escapeHTML(item.recommendation)}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  });
+
+  const sec4_TopFindings = `
+    <div class="ai-section-numbered-card">
+      <div class="ai-section-numbered-title">
+        <span class="ai-section-number-pill">4</span>
+        <span>TOP FINDINGS (MAX 3)</span>
+      </div>
+      <div class="ai-cards-grid">
+        ${findingsCardsHTML || '<p class="text-muted">No top findings flagged.</p>'}
+      </div>
+    </div>
+  `;
+
+  // ---------------------------------------------------------------------------
+  // 5. FUNNEL INVESTIGATION
+  // ---------------------------------------------------------------------------
+  const funnelSteps = data.funnel_investigation || data.stage_analysis || [];
+  let funnelCardsHTML = '';
+  funnelSteps.forEach(stg => {
+    const sSign = (stg.change_percentage_points > 0 || stg.change > 0) ? '+' : '';
+    const chgVal = stg.change_percentage_points != null ? stg.change_percentage_points : stg.change;
+    funnelCardsHTML += `
+      <div class="ai-sub-card">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <strong style="font-size: 1rem; color: #1e293b;">${escapeHTML(stg.stage_label || stg.progression)}</strong>
+          <div class="ai-badges-group">
+            ${getStatusBadge(stg.status)}
+            ${getPriorityBadge(stg.priority)}
+          </div>
+        </div>
+        <div style="font-size: 0.88rem; color: #334155; margin-top: 4px;">
+          Retention: ${stg.before_retention != null ? stg.before_retention : stg.before_retention_percent}% &rarr; <strong>${stg.after_retention != null ? stg.after_retention : stg.after_retention_percent}%</strong> (${sSign}${chgVal} pp)
+        </div>
+        <div style="font-size: 0.82rem; color: var(--danger); font-weight: 600;">
+          Step Attrition: ${stg.dropped_sessions} dropped (${stg.drop_rate_percent}% step loss)
+        </div>
+        <div class="ai-evidence-box" style="margin-top: 4px;">
+          ${escapeHTML(stg.evidence || stg.summary)}
+        </div>
+      </div>
+    `;
+  });
+
+  const sec5_FunnelInvestigation = `
+    <div class="ai-section-numbered-card">
+      <div class="ai-section-numbered-title">
+        <span class="ai-section-number-pill">5</span>
+        <span>FUNNEL INVESTIGATION (VISIT &rarr; CART &rarr; CHECKOUT &rarr; PAID)</span>
+      </div>
+      <div class="ai-stage-grid">
+        ${funnelCardsHTML || '<p class="text-muted">No funnel step data available for selected filter.</p>'}
+      </div>
+    </div>
+  `;
+
+  // ---------------------------------------------------------------------------
+  // 6. DEVICE INVESTIGATION
+  // ---------------------------------------------------------------------------
+  const devices = data.device_investigation || data.device_analysis || [];
+  let deviceCardsHTML = '';
+  devices.forEach(dev => {
+    const dChg = dev.change != null ? dev.change : dev.change_percentage_points;
+    const dSign = dChg > 0 ? '+' : '';
+    const dColor = dChg < 0 ? 'var(--danger)' : (dChg > 0 ? 'var(--success)' : 'inherit');
+    deviceCardsHTML += `
+      <div class="ai-sub-card" style="border-top: 3px solid ${dColor};">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <strong style="font-size: 1.05rem; color: #0f172a;">${escapeHTML(dev.device_label || capitalize(dev.device))}</strong>
+          <div class="ai-badges-group">
+            ${getStatusBadge(dev.status)}
+            ${getPriorityBadge(dev.priority)}
+          </div>
+        </div>
+        <div style="font-size: 0.88rem; margin-top: 4px;">
+          Paid Conversion: <strong>${dev.before_percent}%</strong> &rarr; <strong>${dev.after_percent}%</strong> 
+          (<strong style="color: ${dColor};">${dSign}${dChg} pp</strong>)
+        </div>
+        <div style="font-size: 0.8rem; color: #64748b;">
+          After Period: ${dev.after_sessions || 0} visits &bull; ${dev.after_paid || 0} paid &bull; <strong style="color: var(--danger);">${dev.dropped_at_checkout || 0} dropped at checkout</strong>
+        </div>
+        <div class="ai-evidence-box" style="margin-top: 6px;">
+          ${escapeHTML(dev.evidence || dev.summary)}
+        </div>
+      </div>
+    `;
+  });
+
+  const sec6_DeviceInvestigation = `
+    <div class="ai-section-numbered-card">
+      <div class="ai-section-numbered-title">
+        <span class="ai-section-number-pill">6</span>
+        <span>DEVICE INVESTIGATION</span>
+      </div>
+      <div class="ai-device-grid">
+        ${deviceCardsHTML || '<p class="text-muted">No device data available for selected filter.</p>'}
+      </div>
+    </div>
+  `;
+
+  // ---------------------------------------------------------------------------
+  // 7. REASON INVESTIGATION (6 Independent Hypotheses)
+  // ---------------------------------------------------------------------------
+  const reasons = data.reason_investigation || data.reason_analysis || [];
+  let reasonsCardsHTML = '';
+  reasons.forEach(r => {
+    reasonsCardsHTML += `
+      <div class="ai-finding-card">
+        <div class="ai-finding-header">
+          <div class="ai-finding-title">${escapeHTML(r.title)}</div>
+          <div class="ai-badges-group">
+            ${getStatusBadge(r.status)}
+            ${getPriorityBadge(r.priority)}
+          </div>
+        </div>
+        <div class="ai-block-row" style="margin-top: 6px;">
+          <span class="ai-block-label">Affected Sessions (Independently Calculated):</span>
+          <strong style="color: var(--danger); font-size: 0.95rem;">${r.affected_sessions != null ? r.affected_sessions : 0} sessions</strong> in After period (Before: ${r.before_affected != null ? r.before_affected : (r.before_count || 0)})
+        </div>
+        <div style="font-size: 0.77rem; color: #475569; font-style: italic; margin-top: 4px;">
+          ${escapeHTML(r.causation_vs_correlation || '')}
+        </div>
+        <div class="ai-evidence-box" style="margin-top: 8px;">
+          <span class="ai-block-label" style="color: #4338ca;">Forensic Telemetry Evidence:</span>
+          ${escapeHTML(r.evidence)}
+        </div>
+        <div class="ai-action-box" style="margin-top: 8px;">
+          <span class="ai-block-label" style="color: #15803d;">Investigation Action:</span>
+          ${escapeHTML(r.recommendation)}
+        </div>
+      </div>
+    `;
+  });
+
+  const sec7_ReasonInvestigation = `
+    <div class="ai-section-numbered-card">
+      <div class="ai-section-numbered-title">
+        <span class="ai-section-number-pill">7</span>
+        <span>REASON INVESTIGATION (6 INDEPENDENT HYPOTHESES)</span>
+      </div>
+      <div class="ai-cards-grid">
+        ${reasonsCardsHTML}
+      </div>
+    </div>
+  `;
+
+  // ---------------------------------------------------------------------------
+  // 8. SUPPORTING EVIDENCE
+  // ---------------------------------------------------------------------------
+  const evidenceList = data.supporting_evidence || [];
+  let evidenceListHTML = '';
+  evidenceList.forEach(ev => {
+    evidenceListHTML += `
+      <li style="padding: 6px 0; font-size: 0.88rem; color: #1e293b; display: flex; align-items: flex-start; gap: 8px;">
+        <span style="color: var(--primary-blue); font-weight: 700;">&bull;</span>
+        <span>${escapeHTML(ev)}</span>
+      </li>
+    `;
+  });
+
+  const sec8_SupportingEvidence = `
+    <div class="ai-section-numbered-card">
+      <div class="ai-section-numbered-title">
+        <span class="ai-section-number-pill">8</span>
+        <span>SUPPORTING EVIDENCE (ACTUAL TELEMETRY COUNTS)</span>
+      </div>
+      <ul style="list-style: none; padding: 0; margin: 0;">
+        ${evidenceListHTML || '<li class="text-muted">No evidence points recorded.</li>'}
+      </ul>
+    </div>
+  `;
+
+  // ---------------------------------------------------------------------------
+  // 9. RECOMMENDED ACTIONS
+  // ---------------------------------------------------------------------------
+  const recs = data.recommended_actions || data.recommendations || [];
+  let recsHTML = '';
+  recs.forEach(rec => {
+    recsHTML += `
+      <div class="ai-rec-item">
+        <div style="flex-shrink: 0; padding-top: 2px;">
+          ${getPriorityBadge(rec.priority)}
+        </div>
+        <div class="ai-rec-content">
+          <div class="ai-rec-area">${escapeHTML(rec.area || '')}</div>
+          <div class="ai-rec-action">${escapeHTML(rec.action || '')}</div>
+          <div class="ai-rec-impact">&rarr; Expected Impact: ${escapeHTML(rec.expected_impact || '')}</div>
+        </div>
+      </div>
+    `;
+  });
+
+  const sec9_RecommendedActions = `
+    <div class="ai-section-numbered-card">
+      <div class="ai-section-numbered-title">
+        <span class="ai-section-number-pill">9</span>
+        <span>RECOMMENDED ACTIONS</span>
+      </div>
+      <div class="ai-recommendations-list">
+        ${recsHTML || '<p class="text-muted">No recommended actions generated.</p>'}
+      </div>
+    </div>
+  `;
+
+  // ---------------------------------------------------------------------------
+  // 10. DATA QUALITY / LIMITATIONS
+  // ---------------------------------------------------------------------------
+  const notes = data.data_quality_limitations || data.data_quality_notes || [];
+  let notesHTML = '';
+  notes.forEach(note => {
+    notesHTML += `<li class="ai-quality-item">${escapeHTML(note)}</li>`;
+  });
+
+  const sec10_DataQuality = `
+    <div class="ai-section-numbered-card">
+      <div class="ai-section-numbered-title">
+        <span class="ai-section-number-pill">10</span>
+        <span>DATA QUALITY / LIMITATIONS</span>
+      </div>
+      <ul class="ai-quality-list">
+        ${notesHTML}
+      </ul>
+    </div>
+  `;
+
+  // Combine all 10 canonical sections in exact order
+  container.innerHTML = `
+    ${sec1_ExecutiveSummary}
+    ${sec2_OverallResult}
+    ${sec3_BiggestDropOff}
+    ${sec4_TopFindings}
+    ${sec5_FunnelInvestigation}
+    ${sec6_DeviceInvestigation}
+    ${sec7_ReasonInvestigation}
+    ${sec8_SupportingEvidence}
+    ${sec9_RecommendedActions}
+    ${sec10_DataQuality}
+  `;
+}
+

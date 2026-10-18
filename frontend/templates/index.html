@@ -16,25 +16,32 @@
     </div>
 
     <nav class="sidebar-nav">
+      <div class="sidebar-section-title">Dashboard</div>
       <a href="#overview" class="nav-link active" data-page="page-overview">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
         Overview
       </a>
       <a href="#funnel" class="nav-link" data-page="page-funnel">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"></path></svg>
-        Funnel Analysis
+        Funnel Progression Analysis
       </a>
       <a href="#device" class="nav-link" data-page="page-device">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-        Device Comparison
+        Device Segment Comparison
       </a>
+      <a href="#ai-investigation" class="nav-link nav-link-ai" id="sidebarAiLink" data-page="page-ai">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"></path><rect x="4" y="8" width="16" height="12" rx="2"></rect><circle cx="9" cy="14" r="1.5"></circle><circle cx="15" cy="14" r="1.5"></circle></svg>
+        🤖 AI Investigation
+      </a>
+
+      <div class="sidebar-section-title" style="margin-top: 18px;">Diagnostics &amp; Data</div>
       <a href="#investigation" class="nav-link" data-page="page-investigation">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
         Investigation Panel
       </a>
       <a href="#quality" class="nav-link" data-page="page-quality">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-        Data Quality & Checks
+        Data Quality &amp; Checks
       </a>
       <a href="#upload" class="nav-link" data-page="page-upload">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
@@ -62,6 +69,12 @@
         <p class="subtitle" id="pageHeadingSubtitle">Find where customers drop out of the checkout funnel and identify which segment needs investigation.</p>
       </div>
       <div class="header-actions">
+        <div id="liveIndicatorPill" class="live-status-pill" title="Live real-time event ingestion active">
+          <span class="live-dot pulse"></span>
+          <span class="live-text-main">LIVE</span>
+          <span id="liveTimestamp" class="live-meta">Last updated: --:--:--</span>
+          <span id="liveEventCount" class="live-badge">0 Events</span>
+        </div>
         <button id="refreshBtn" class="btn btn-secondary">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
           Refresh Analysis
@@ -109,7 +122,7 @@
          PAGE VIEW: OVERVIEW (Comprehensive Executive View)
          ========================================================================== -->
     <div id="page-overview" class="page-view active-page">
-      <!-- 6 Executive Summary Metric Cards inside Overview -->
+      <!-- High-Level Overview KPIs Grid -->
       <section class="metric-grid">
         <div class="metric-card">
           <span class="metric-header" id="cardBeforeHeader">Before Paid Conv.</span>
@@ -124,7 +137,7 @@
         </div>
 
         <div class="metric-card">
-          <span class="metric-header" id="cardChangeHeader">Overall Change</span>
+          <span class="metric-header" id="cardChangeHeader">Overall Conversion Change</span>
           <div class="metric-value" id="cardOverallChange">-- pp</div>
           <div class="metric-sub" id="cardOverallChangeSub">
             <span class="badge-pill badge-neutral">Net Impact</span>
@@ -132,7 +145,7 @@
         </div>
 
         <div class="metric-card" style="border-left: 4px solid var(--danger);">
-          <span class="metric-header" id="cardAffectedHeader">Largest Declining Segment</span>
+          <span class="metric-header" id="cardAffectedHeader">Overall Drop-Off Summary</span>
           <div class="metric-value" id="cardAffectedSegment" style="color: var(--danger);">--</div>
           <div class="metric-sub" id="cardAffectedSub">
             <span class="badge-pill badge-danger" id="cardAffectedBadge">-- pp</span>
@@ -140,117 +153,63 @@
         </div>
 
         <div class="metric-card">
-          <span class="metric-header">Sessions Analysed</span>
+          <span class="metric-header">Total Sessions Analysed</span>
           <div class="metric-value" id="cardTotalSessions">--</div>
           <div class="metric-sub text-muted" id="cardSessionsSub">Before: -- | After: --</div>
         </div>
 
         <div class="metric-card">
-          <span class="metric-header">Duplicates Removed</span>
-          <div class="metric-value" id="cardDuplicates">--</div>
-          <div class="metric-sub text-muted" id="cardDuplicatesSub">From -- raw events</div>
-        </div>
-      </section>
-
-      <!-- Funnel Progression Card -->
-      <section class="dashboard-card">
-        <div class="card-header">
-          <div>
-            <h3 class="card-title">Funnel Progression Analysis</h3>
-            <p class="card-desc">Session progression through declared stages: Visit → Cart → Checkout → Paid</p>
-          </div>
-          <span class="badge-pill badge-neutral" id="overviewFunnelBadge">All Devices</span>
-        </div>
-        <div class="card-body">
-          <div class="two-col">
-            <div>
-              <div class="chart-container">
-                <canvas id="overviewFunnelChart"></canvas>
-              </div>
-            </div>
-            <div>
-              <div class="data-table-wrapper">
-                <table class="data-table">
-                  <thead>
-                    <tr>
-                      <th>Funnel Stage</th>
-                      <th>Before Sessions</th>
-                      <th>After Sessions</th>
-                      <th>Stage Retention</th>
-                      <th>Cumulative Conv.</th>
-                    </tr>
-                  </thead>
-                  <tbody id="overviewFunnelTableBody">
-                    <!-- Populated dynamically -->
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-          <div class="callout callout-info" id="overviewFunnelInsight" style="margin-top: 18px;">
-            <strong>Funnel Progression Observation:</strong> Loading analysis insights...
+          <span class="metric-header">Telemetry &amp; Live Ingestion</span>
+          <div class="metric-value" id="cardTotalEvents">-- Events</div>
+          <div class="metric-sub text-muted" id="cardEventsSub">
+            <span id="overviewLiveBadge" class="badge-pill badge-success" style="font-size: 0.72rem;">● LIVE ACTIVE</span>
+            <span id="cardDuplicatesSub" style="margin-left: 4px;">-- cleaned</span>
           </div>
         </div>
       </section>
 
-      <!-- Device Comparison Card -->
+      <!-- High-Level Business Summary Card -->
       <section class="dashboard-card">
         <div class="card-header">
           <div>
-            <h3 class="card-title">Device Comparison (Desktop vs Mobile)</h3>
-            <p class="card-desc">Conversion metrics across device segments calculated directly from session counts.</p>
+            <h3 class="card-title">High-Level Business Summary</h3>
+            <p class="card-desc">Executive summary of funnel conversion trends, live telemetry, and critical drop-off areas.</p>
           </div>
+          <span class="badge-pill badge-neutral" id="overviewAffectedBadge">Executive View</span>
         </div>
         <div class="card-body">
-          <div class="two-col">
-            <div>
-              <div class="chart-container">
-                <canvas id="overviewDeviceChart"></canvas>
-              </div>
-            </div>
-            <div>
-              <div class="data-table-wrapper">
-                <table class="data-table">
-                  <thead>
-                    <tr>
-                      <th>Device</th>
-                      <th id="overviewDeviceTableBeforeTh">Before (Paid / Visit)</th>
-                      <th id="overviewDeviceTableAfterTh">After (Paid / Visit)</th>
-                      <th>Change</th>
-                      <th>Sample Flag</th>
-                    </tr>
-                  </thead>
-                  <tbody id="overviewDeviceTableBody">
-                    <!-- Populated dynamically -->
-                  </tbody>
-                </table>
-              </div>
-              <div class="callout callout-warning">
-                <strong>Low Volume Warning:</strong> Segments with fewer than 30 sessions are marked as low volume. Conclusions drawn from small samples require caution and further testing.
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Evidence / Investigation Card in Overview -->
-      <section class="dashboard-card">
-        <div class="card-header">
-          <div>
-            <h3 class="card-title">Investigation Findings & Recommendations</h3>
-            <p class="card-desc">Summary of observed drop-offs and recommended next steps</p>
-          </div>
-          <span class="badge-pill badge-danger" id="overviewAffectedBadge">Desktop Segment</span>
-        </div>
-        <div class="card-body">
-          <div class="evidence-card">
-            <span class="hypothesis-tag">Possible reason (hypothesis, not proven)</span>
-            <h4 id="overviewEvidenceHeadline" style="font-size: 1.1rem; color: #0f172a; margin-bottom: 8px;">
-              Investigating Desktop Checkout Collapse
+          <div class="evidence-card" style="margin-bottom: 24px;">
+            <span class="hypothesis-tag">Executive Summary</span>
+            <h4 id="overviewEvidenceHeadline" style="font-size: 1.15rem; color: #0f172a; margin-bottom: 8px;">
+              Funnel Conversion Health &amp; Telemetry Status
             </h4>
-            <p id="overviewEvidenceContent" style="color: #475569; font-size: 0.925rem; line-height: 1.6;">
-              Loading evidence summary...
+            <p id="overviewEvidenceContent" style="color: #475569; font-size: 0.95rem; line-height: 1.65;">
+              Loading high-level business summary...
             </p>
+          </div>
+
+          <!-- Direct Navigation to Dedicated Dashboards -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px;">
+            <div class="overview-nav-card" onclick="navigateToPage('page-funnel', true)" style="cursor: pointer; background: #f8fafc; border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 18px; transition: all 0.2s ease;">
+              <div style="font-size: 1.4rem; margin-bottom: 6px;">🪜</div>
+              <h4 style="font-size: 1rem; color: #1e293b; margin-bottom: 4px;">Funnel Progression Analysis</h4>
+              <p style="font-size: 0.82rem; color: #64748b; line-height: 1.45;">Full step-by-step breakdown across Visit, Cart, Checkout, and Paid stages with retention and drop-off analysis.</p>
+              <span style="font-size: 0.82rem; color: var(--primary-blue); font-weight: 600; display: inline-block; margin-top: 10px;">Explore Funnel Dashboard &rarr;</span>
+            </div>
+
+            <div class="overview-nav-card" onclick="navigateToPage('page-device', true)" style="cursor: pointer; background: #f8fafc; border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 18px; transition: all 0.2s ease;">
+              <div style="font-size: 1.4rem; margin-bottom: 6px;">📱</div>
+              <h4 style="font-size: 1rem; color: #1e293b; margin-bottom: 4px;">Device Segment Comparison</h4>
+              <p style="font-size: 0.82rem; color: #64748b; line-height: 1.45;">Dedicated side-by-side comparison between Desktop and Mobile users, sample flags, and segment variance.</p>
+              <span style="font-size: 0.82rem; color: var(--primary-blue); font-weight: 600; display: inline-block; margin-top: 10px;">Explore Device Dashboard &rarr;</span>
+            </div>
+
+            <div class="overview-nav-card" onclick="navigateToPage('page-ai', true)" style="cursor: pointer; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: var(--radius-md); padding: 18px; transition: all 0.2s ease;">
+              <div style="font-size: 1.4rem; margin-bottom: 6px;">🤖</div>
+              <h4 style="font-size: 1rem; color: #1d4ed8; margin-bottom: 4px;">AI Investigation Engine</h4>
+              <p style="font-size: 0.82rem; color: #3b82f6; line-height: 1.45;">Interactive filter configuration screen and comprehensive 10-section forensic investigation.</p>
+              <span style="font-size: 0.82rem; color: #1d4ed8; font-weight: 700; display: inline-block; margin-top: 10px;">Launch AI Investigation &rarr;</span>
+            </div>
           </div>
         </div>
       </section>
@@ -343,6 +302,167 @@
           </div>
         </div>
       </section>
+    </div>
+
+    <!-- ==========================================================================
+         PAGE VIEW: AI INVESTIGATION (Filter Screen & 10-Section Investigation Result)
+         ========================================================================== -->
+    <div id="page-ai" class="page-view">
+      <!-- 1. AI Investigation Filter / Configuration Screen (Shown by default) -->
+      <section class="ai-filter-screen-card" id="aiFilterScreen">
+        <div class="ai-filter-header">
+          <div class="ai-filter-icon">🤖</div>
+          <div>
+            <h2 class="ai-filter-title">AI INVESTIGATION</h2>
+            <p class="ai-filter-subtitle">Configure the analysis before generating the investigation.</p>
+          </div>
+        </div>
+
+        <div class="ai-filter-form">
+          <div class="ai-filter-row">
+            <div class="ai-field-group">
+              <label for="aiFilterPeriod" class="ai-field-label">1. Time Period</label>
+              <select id="aiFilterPeriod" class="ai-select-control">
+                <option value="before_vs_after" selected>Before vs After</option>
+                <option value="all">All Data</option>
+                <option value="before">Before</option>
+                <option value="after">After</option>
+              </select>
+              <span class="ai-field-hint">Analyze single period or evaluate baseline vs active changes.</span>
+            </div>
+
+            <div class="ai-field-group">
+              <label for="aiFilterDevice" class="ai-field-label">2. Device</label>
+              <select id="aiFilterDevice" class="ai-select-control">
+                <option value="all" selected>All Devices</option>
+                <option value="mobile">Mobile</option>
+                <option value="desktop">Desktop</option>
+              </select>
+              <span class="ai-field-hint">Filter entire dataset to all devices or isolate mobile vs desktop telemetry.</span>
+            </div>
+          </div>
+
+          <div class="ai-filter-row">
+            <div class="ai-field-group">
+              <label for="aiFilterStage" class="ai-field-label">3. Stage</label>
+              <select id="aiFilterStage" class="ai-select-control">
+                <option value="all" selected>All Stages</option>
+                <option value="visit">Visit</option>
+                <option value="cart">Cart</option>
+                <option value="checkout">Checkout</option>
+                <option value="paid">Paid</option>
+              </select>
+              <span class="ai-field-hint">Focus forensic investigation on a specific step or full sequence.</span>
+            </div>
+
+            <div class="ai-field-group">
+              <label for="aiFilterScope" class="ai-field-label">4. Analysis Scope</label>
+              <select id="aiFilterScope" class="ai-select-control">
+                <option value="complete" selected>Complete Investigation</option>
+                <option value="funnel">Funnel Analysis</option>
+                <option value="device">Device Analysis</option>
+                <option value="payment">Payment Analysis</option>
+                <option value="checkout">Checkout Analysis</option>
+                <option value="reasons">Customer Drop-off Reasons</option>
+              </select>
+              <span class="ai-field-hint">Depth and thematic concentration of the investigative scan.</span>
+            </div>
+          </div>
+
+          <div class="ai-filter-actions">
+            <button id="generateAiBtn" class="btn btn-ai-action btn-lg">
+              <span class="ai-btn-sparkle">✨</span>
+              <span>Generate AI Investigation</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. AI Loading State Indicator (Hidden by default) -->
+      <div id="aiLoadingIndicator" class="ai-loading-container" style="display: none;">
+        <div class="ai-spinner"></div>
+        <div class="ai-loading-text">
+          <strong>Applying filters &amp; executing forensic analytics engine...</strong>
+          <p>Evaluating filtered funnel retention, payment gateway errors, and root-cause hypotheses on live data.</p>
+        </div>
+      </div>
+
+      <!-- 3. AI Error Banner (Hidden by default) -->
+      <div id="aiErrorContainer" class="ai-error-banner" style="display: none;">
+        <span class="ai-error-icon">⚠️</span>
+        <div class="ai-error-text" id="aiErrorMessage">Unable to generate AI investigation.</div>
+        <button id="aiRetryBtn" class="btn btn-secondary btn-sm" style="margin-left: 12px;">Retry</button>
+      </div>
+
+      <!-- 4. AI Result Screen (Hidden by default, shown after generation) -->
+      <div id="aiResultsScreen" class="ai-results-screen" style="display: none;">
+        <div class="ai-results-header-bar">
+          <div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 1.5rem;">🤖</span>
+              <h2 style="font-size: 1.25rem; font-weight: 800; color: #0f172a; margin: 0;">AI INVESTIGATION RESULT</h2>
+            </div>
+            <div class="ai-filters-used-bar" id="aiFiltersUsedBar" style="margin-top: 8px;">
+              <span class="ai-filters-used-label">FILTERS USED:</span>
+              <span class="badge-pill badge-neutral" id="aiUsedPeriod">Time Period: Before vs After</span>
+              <span class="badge-pill badge-neutral" id="aiUsedDevice">Device: All Devices</span>
+              <span class="badge-pill badge-neutral" id="aiUsedStage">Stage: All Stages</span>
+              <span class="badge-pill badge-neutral" id="aiUsedScope">Scope: Complete Investigation</span>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <button id="aiRefreshBtn" class="btn btn-primary" style="font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+              <span>🔄</span> Refresh &amp; Re-Analyze
+            </button>
+            <button id="aiChangeFiltersBtn" class="btn btn-secondary" style="font-weight: 600;">
+              &larr; Change Filters
+            </button>
+          </div>
+        </div>
+
+        <!-- AI DATA SNAPSHOT CARD (Proves latest live telemetry is used) -->
+        <div class="ai-data-snapshot-card" id="aiDataSnapshotCard" style="margin-top: 16px;">
+          <div class="ai-snapshot-header">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="ai-snapshot-badge">LIVE PROVENANCE</span>
+              <h3 style="margin: 0; font-size: 1rem; font-weight: 800; color: #0f172a;">AI DATA SNAPSHOT</h3>
+            </div>
+            <span class="badge-pill badge-success" style="font-size: 0.74rem;">● CURRENT IN-MEMORY STORE</span>
+          </div>
+          <div class="ai-snapshot-grid">
+            <div class="ai-snapshot-item">
+              <span class="ai-snapshot-label">Live Events Analyzed</span>
+              <strong class="ai-snapshot-val" id="snapLiveEvents">--</strong>
+            </div>
+            <div class="ai-snapshot-item">
+              <span class="ai-snapshot-label">Sessions Analyzed</span>
+              <strong class="ai-snapshot-val" id="snapSessions">--</strong>
+            </div>
+            <div class="ai-snapshot-item">
+              <span class="ai-snapshot-label">Latest Event</span>
+              <strong class="ai-snapshot-val" id="snapLatestEvent">--:--:--</strong>
+            </div>
+            <div class="ai-snapshot-item">
+              <span class="ai-snapshot-label">Analysis Generated</span>
+              <strong class="ai-snapshot-val" id="snapGeneratedAt">--:--:--</strong>
+            </div>
+            <div class="ai-snapshot-item">
+              <span class="ai-snapshot-label">AI Engine</span>
+              <span class="badge-pill badge-primary" id="snapAiEngine" style="font-weight: 700; font-size: 0.8rem; display: inline-block; width: fit-content;">Deterministic</span>
+            </div>
+          </div>
+          <div class="ai-snapshot-filters-row">
+            <span style="font-weight: 700; font-size: 0.78rem; color: #475569;">Filters Applied:</span>
+            <span class="badge-pill badge-neutral" id="snapFilterPeriod">Time Period: Before vs After</span>
+            <span class="badge-pill badge-neutral" id="snapFilterDevice">Device: All Devices</span>
+            <span class="badge-pill badge-neutral" id="snapFilterStage">Stage: All Stages</span>
+            <span class="badge-pill badge-neutral" id="snapFilterScope">Scope: Complete Investigation</span>
+          </div>
+        </div>
+
+        <!-- 10 Investigation Sections rendered dynamically in exact order -->
+        <div id="aiResultsContainer" class="ai-results-content"></div>
+      </div>
     </div>
 
     <!-- ==========================================================================

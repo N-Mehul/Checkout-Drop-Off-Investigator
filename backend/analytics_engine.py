@@ -1,199 +1,37 @@
 from __future__ import annotations
-import csv, io, json, os
 from collections import Counter, defaultdict
 from datetime import datetime
-from pathlib import Path
-from flask import Flask, jsonify, request, send_file, render_template
+from statistics import median
+from typing import Any, Dict, List, Optional
 
-BASE_DIR = Path(__file__).resolve().parent
-FIXTURE_PATH = BASE_DIR / 'fixture.json'
-STEPS = ['visit', 'cart', 'checkout', 'paid']
-DEVICES = ['mobile', 'desktop']
-app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
-
-
-def parse_time(value):
-    if value is None or str(value).strip() == '':
-        return None
-    s = str(value).strip().replace('Z', '+00:00')
-    try:
-        return datetime.fromisoformat(s)
-    except ValueError:
-        for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d'):
-            try:
-                return datetime.strptime(s, fmt)
-            except ValueError:
-                pass
-        return None
+from database.repository import (
+    STEPS,
+    DEVICES,
+    clean,
+    normalize_event,
+    parse_time,
+    safe_parse_float,
+)
 
 
-def normalize_event(row):
-    # Support both step and event_name / event aliases
-    step_val = row.get('step')
-    if step_val is None or clean(step_val) == '':
-        step_val = row.get('event_name') or row.get('event')
-
-    # Support time aliases: time, timestamp, event_time, datetime, event_date
-    time_val = row.get('time') or row.get('timestamp') or row.get('event_time') or row.get('datetime')
-    if not time_val and row.get('event_date'):
-        time_val = row.get('event_date')
-
-    return {
-        'event_id': clean(row.get('event_id')),
-        'session_id': clean(row.get('session_id')),
-        'step': clean(step_val).lower(),
-        'device': clean(row.get('device')).lower(),
-        'time': clean(time_val),
-        'period': clean(row.get('period')).lower(),
-        'event_date': clean(row.get('event_date')),
-        'payment_method': clean(row.get('payment_method')).lower(),
-        'payment_status': clean(row.get('payment_status')),
-        'payment_error': clean(row.get('payment_error')),
-        'delivery_fee': clean(row.get('delivery_fee')),
-        'checkout_error': clean(row.get('checkout_error')),
-        'page_load_time': clean(row.get('page_load_time')),
-        'checkout_steps': clean(row.get('checkout_steps') or row.get('form_steps') or row.get('step_count')),
-        'checkout_time': clean(row.get('checkout_time') or row.get('checkout_duration') or row.get('time_in_checkout')),
-        'intent': clean(row.get('intent') or row.get('browse_only') or row.get('user_intent')),
-        'discount_code': clean(row.get('discount_code') or row.get('coupon_code') or row.get('promo_code') or row.get('coupon')),
-        'discount_amount': clean(row.get('discount_amount') or row.get('discount') or row.get('discount_value')),
-    }
-
-
-def clean(value):
-    if value is None:
-        return ''
-    return str(value).strip()
-
-
-def safe_parse_float(value):
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    s = str(value).strip().lstrip('$£€')
-    if not s:
-        return None
-    try:
-        return float(s)
-    except (ValueError, TypeError):
-        return None
-
-
-def load_fixture():
-    with FIXTURE_PATH.open(encoding='utf-8') as f:
-        data = json.load(f)
-    return data['records']['events'], data
-
-
-def parse_upload(file):
-    name = (file.filename or '').lower()
-    raw = file.read()
-    if not raw:
-        raise ValueError('The uploaded file is empty.')
-    try:
-        text = raw.decode('utf-8-sig')
-    except UnicodeDecodeError:
-        raise ValueError('Please upload a UTF-8 CSV or JSON file.')
-    data = None
-    if name.endswith('.json') or text.lstrip().startswith('{') or text.lstrip().startswith('['):
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f'Invalid JSON: {exc.msg}.')
-        if isinstance(data, dict):
-            # Support records.events, events, or records (if it's a list)
-            if isinstance(data.get('records'), dict) and isinstance(data['records'].get('events'), list):
-                events = data['records']['events']
-            elif isinstance(data.get('events'), list):
-                events = data['events']
-            elif isinstance(data.get('records'), list):
-                events = data['records']
-            else:
-                raise ValueError('Unsupported JSON structure. Expected records.events or events array.')
-        elif isinstance(data, list):
-            events = data
-        else:
-            raise ValueError('JSON must be an event array or contain records.events.')
-        if not isinstance(events, list):
-            raise ValueError('JSON must be an event array or contain records.events.')
-    elif name.endswith('.csv') or ',' in text.splitlines()[0]:
-        try:
-            events = list(csv.DictReader(io.StringIO(text)))
-        except Exception as exc:
-            raise ValueError(f'Could not read CSV: {exc}')
-    else:
-        raise ValueError('Unsupported file type. Upload a .csv or .json file.')
-    if not events:
-        raise ValueError('No event rows were found in the uploaded file.')
-
-    cleaned_events = []
-    for row in events:
-        if not isinstance(row, dict):
-            raise ValueError('Each record in the dataset must be an object/dictionary.')
-        cleaned_row = {str(k).strip().lower(): v for k, v in row.items() if k is not None}
-
-        # Support both 'step' and 'event_name' / 'event' as aliases for the funnel step.
-        # If 'step' is missing but 'event_name' exists, map 'event_name' to 'step' internally.
-        if 'step' not in cleaned_row or not str(cleaned_row['step']).strip():
-            if 'event_name' in cleaned_row and str(cleaned_row['event_name']).strip():
-                cleaned_row['step'] = cleaned_row['event_name']
-            elif 'event' in cleaned_row and str(cleaned_row['event']).strip():
-                cleaned_row['step'] = cleaned_row['event']
-
-        # Support time / timestamp / event_time / datetime
-        if 'time' not in cleaned_row or not str(cleaned_row['time']).strip():
-            if 'timestamp' in cleaned_row and str(cleaned_row['timestamp']).strip():
-                cleaned_row['time'] = cleaned_row['timestamp']
-            elif 'event_time' in cleaned_row and str(cleaned_row['event_time']).strip():
-                cleaned_row['time'] = cleaned_row['event_time']
-            elif 'datetime' in cleaned_row and str(cleaned_row['datetime']).strip():
-                cleaned_row['time'] = cleaned_row['datetime']
-
-        cleaned_events.append(cleaned_row)
-    events = cleaned_events
-
-    required = {'event_id', 'session_id', 'step', 'device'}
-    keys = set(events[0].keys())
-    missing = sorted(required - keys)
-    if missing:
-        raise ValueError('Missing required columns: ' + ', '.join(missing) + '.')
-
-    normalized = [normalize_event(row) for row in events]
-    invalid_steps = sorted({e['step'] for e in normalized if e['step'] and e['step'] not in STEPS})
-    if invalid_steps:
-        raise ValueError('Unknown funnel step(s): ' + ', '.join(invalid_steps) + '. Allowed: visit, cart, checkout, paid.')
-
-    missing_id_count = sum(not e['event_id'] for e in normalized)
-    missing_sess_count = sum(not e['session_id'] for e in normalized)
-    missing_step_count = sum(not e['step'] for e in normalized)
-    if missing_id_count > 0 or missing_sess_count > 0 or missing_step_count > 0:
-        details = []
-        if missing_id_count:
-            details.append(f'{missing_id_count} row(s) missing event_id')
-        if missing_sess_count:
-            details.append(f'{missing_sess_count} row(s) missing session_id')
-        if missing_step_count:
-            details.append(f'{missing_step_count} row(s) missing step')
-        raise ValueError('Invalid records: ' + ', '.join(details) + '.')
-
-    fixture_out = data if isinstance(data, dict) else None
-    return normalized, fixture_out
-
-
-def pct(n, d):
+def pct(n: Optional[float], d: Optional[float]) -> Optional[float]:
+    """Calculate percentage rounded to 2 decimal places."""
     return round(100 * n / d, 2) if d else None
 
 
-def rate(n, d):
+def rate(n: Optional[float], d: Optional[float]) -> Optional[float]:
+    """Calculate decimal rate rounded to 6 decimal places."""
     return round(n / d, 6) if d else None
 
 
-def analyze(raw_events, fixture_data=None, is_builtin=False):
+def analyze(raw_events: List[Dict[str, Any]], fixture_data: Optional[Dict[str, Any]] = None, is_builtin: bool = False) -> Dict[str, Any]:
+    """
+    Execute comprehensive funnel drop-off analysis and reason-specific investigation.
+    """
     normalized = [normalize_event(e) for e in raw_events]
     raw_count = len(normalized)
-    # Keep the first occurrence of each non-empty event_id; rows without IDs are reported as invalid.
+
+    # Keep first occurrence of each event_id; duplicates are tracked in event_quality
     seen = set()
     deduped = []
     duplicate_count = 0
@@ -256,17 +94,22 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
                 reached.add(step)
             else:
                 break
-        session_rows.append({'session_id': sid, 'date': session_date, 'period': period,
-                             'device': device, 'payment_method': payment_method, 'reached': reached})
+        session_rows.append({
+            'session_id': sid,
+            'date': session_date,
+            'period': period,
+            'device': device,
+            'payment_method': payment_method,
+            'reached': reached
+        })
 
-    # Build a mapping of session_id to its events for later evidence analysis
+    # Build mapping of session_id to events for evidence analysis
     session_events = defaultdict(list)
     for e in normalized:
         if e['session_id']:
             session_events[e['session_id']].append(e)
 
-    # Reason Investigation logic (4 clean categories)
-    from statistics import median
+    # Reason Investigation logic (6 categories)
     session_row_by_id = {s['session_id']: s for s in session_rows}
     before_dropoff_sids = {s['session_id'] for s in session_rows if s['period'] == 'before' and 'paid' not in s['reached']}
     after_dropoff_sids = {s['session_id'] for s in session_rows if s['period'] == 'after' and 'paid' not in s['reached']}
@@ -303,6 +146,8 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
                     return False
                 dstg = get_session_drop_stage(s['reached'])
                 if stg == 'visit' and dstg == 'visit':
+                    return True
+                if stg == 'cart' and dstg in ('visit', 'cart') and 'visit' in relevant_stages:
                     return True
                 if stg == 'cart' and dstg == 'cart':
                     return True
@@ -532,51 +377,35 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
     })
 
     # 5. Window Shopping
+    # Defined by user rule: session has a "visit" event but does NOT progress to "cart", "checkout", or "paid" within the same session.
+    # Uses standard event data (session_id, period, event_name, device, timestamp); does NOT look for browsing_intent or page_exploration fields.
     action_window = "Engage browsing visitors with personalized product recommendations, clear value propositions, and exit-intent prompts to encourage adding items to cart."
-    has_browse_telemetry = any(
-        bool(e.get('intent')) or
-        bool(e.get('browse_only')) or
-        safe_parse_float(e.get('dwell_time')) is not None or
-        safe_parse_float(e.get('page_views')) is not None or
-        safe_parse_float(e.get('product_views')) is not None or
-        e.get('step') in ('view_item', 'product_view', 'search', 'browse', 'category')
-        for e in normalized
+
+    def is_window_shopping(evs):
+        sid = evs[0]['session_id'] if evs else None
+        if not sid or sid not in session_row_by_id:
+            return False
+        s = session_row_by_id[sid]
+        # Has visit event but does NOT progress to cart, checkout, or paid
+        return 'visit' in s['reached'] and not ({'cart', 'checkout', 'paid'} & s['reached'])
+
+    before_win_affected = sum(1 for sid in before_dropoff_sids if is_window_shopping(session_events.get(sid, [])))
+    after_win_affected = sum(1 for sid in after_dropoff_sids if is_window_shopping(session_events.get(sid, [])))
+    total_win_affected = after_win_affected
+
+    status_win = 'CONFIRMED' if after_win_affected > 0 else ('SUPPORTED' if before_win_affected > 0 else 'NOT DETECTED')
+    b_plural = "session" if before_win_affected == 1 else "sessions"
+    a_plural = "session" if after_win_affected == 1 else "sessions"
+    before_win_ev = f"{before_win_affected} visit-only {b_plural} did not progress to cart in the Before period"
+    after_win_ev = f"{after_win_affected} visit-only {a_plural} did not progress to cart in the After period."
+    obs_win = (
+        f"{after_win_affected} visit-only {a_plural} did not progress to cart in the after period."
+        if after_win_affected > 0 else
+        f"{before_win_affected} visit-only {b_plural} did not progress to cart in the before period; 0 in after period."
+        if before_win_affected > 0 else
+        "All visit sessions progressed to cart or later steps; 0 visit-only sessions detected."
     )
-
-    if has_browse_telemetry:
-        def is_window_shopping(evs):
-            sid = evs[0]['session_id'] if evs else None
-            if not sid or sid not in session_row_by_id:
-                return False
-            s = session_row_by_id[sid]
-            if 'cart' in s['reached']:
-                return False
-            return any(
-                clean(e.get('intent')) in ('browse', 'window_shopping', 'compare') or
-                bool(e.get('browse_only')) or
-                (safe_parse_float(e.get('dwell_time')) or 0) > 60 or
-                (safe_parse_float(e.get('page_views')) or 0) > 3 or
-                (safe_parse_float(e.get('product_views')) or 0) > 2
-                for e in evs
-            )
-
-        before_win_affected = sum(1 for sid in before_dropoff_sids if is_window_shopping(session_events.get(sid, [])))
-        after_win_affected = sum(1 for sid in after_dropoff_sids if is_window_shopping(session_events.get(sid, [])))
-        total_win_affected = after_win_affected
-        status_win = 'SUPPORTED' if (after_win_affected > 0 or before_win_affected > 0) else 'NOT DETECTED'
-        before_win_ev = f"{before_win_affected} session(s) identified with window shopping / browse intent (Before)" if before_win_affected > 0 else "0 window shopping sessions in before period"
-        after_win_ev = f"{after_win_affected} drop-off session(s) identified with window shopping / browse intent (After)" if after_win_affected > 0 else "0 window shopping sessions in after period"
-        obs_win = f"{total_win_affected} drop-off session(s) browsing/comparing without adding items to cart." if total_win_affected > 0 else "Browsing intent telemetry within normal baseline."
-        win_breakdown = calc_reason_breakdowns(is_window_shopping, ['all', 'visit'])
-    else:
-        total_win_affected = 0
-        before_win_affected = 0
-        after_win_affected = 0
-        status_win = 'INSUFFICIENT DATA'
-        before_win_ev = "Uninstrumented (browsing intent & page exploration fields missing in dataset)"
-        after_win_ev = "Uninstrumented (no window shopping/exploratory telemetry captured)"
-        obs_win = "Browsing intent and product view exploration fields are absent in the dataset."
-        win_breakdown = {'by_device': {}, 'by_stage': {}, 'by_device_and_stage': {}}
+    win_breakdown = calc_reason_breakdowns(is_window_shopping, ['all', 'visit', 'cart'])
 
     reasons.append({
         'id': 'window_shopping',
@@ -588,7 +417,7 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
         'total_affected': before_win_affected + after_win_affected,
         'before_evidence': before_win_ev,
         'after_evidence': after_win_ev,
-        'evidence_present': has_browse_telemetry,
+        'evidence_present': True,
         'funnel_stage': 'visit to cart',
         'observation': obs_win,
         'recommended_action': action_window,
@@ -660,8 +489,7 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
         'breakdown': disc_breakdown
     })
 
-    # Add reason investigation to result later
-    # periods_out will be defined after this block
+    # Periods conversion metrics
     periods_out = {}
 
     for period in ['before', 'after']:
@@ -681,10 +509,15 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
             'cart_to_paid': counts['paid'],
             'checkout_to_paid': counts['paid'],
         }
-        conversions = {k: {'numerator': numerators[k], 'denominator': denominators[k],
-                           'rate': rate(numerators[k], denominators[k]),
-                           'percent': pct(numerators[k], denominators[k])}
-                       for k in denominators}
+        conversions = {
+            k: {
+                'numerator': numerators[k],
+                'denominator': denominators[k],
+                'rate': rate(numerators[k], denominators[k]),
+                'percent': pct(numerators[k], denominators[k])
+            }
+            for k in denominators
+        }
         device_results = {}
         for device in sorted(set(DEVICES + [s['device'] for s in rows])):
             drows = [s for s in rows if s['device'] == device]
@@ -706,7 +539,7 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
                 'checkout_to_paid': {'numerator': dcounts['paid'], 'denominator': dcounts['checkout'], 'rate': rate(dcounts['paid'], dcounts['checkout']), 'percent': pct(dcounts['paid'], dcounts['checkout'])},
                 'low_volume': len(drows) < 30,
             }
-        # Payment method breakdown if payment methods present
+
         pm_results = {}
         distinct_pms = sorted({s['payment_method'] for s in rows if s.get('payment_method')})
         for pm in distinct_pms:
@@ -722,7 +555,13 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
                     'percent': pct(pcounts['paid'], pcounts['visit'])
                 }
             }
-        periods_out[period] = {'session_count': len(rows), 'counts': counts, 'conversions': conversions, 'devices': device_results, 'payment_methods': pm_results}
+        periods_out[period] = {
+            'session_count': len(rows),
+            'counts': counts,
+            'conversions': conversions,
+            'devices': device_results,
+            'payment_methods': pm_results
+        }
 
     # Timestamp interval analysis across sessions
     total_interval_pairs = 0
@@ -751,7 +590,6 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
     if has_timing_variation:
         for k, diffs in intervals_by_stage.items():
             if diffs:
-                from statistics import median
                 medians[k] = round(median(diffs), 1)
         median_summary = ", ".join(f"{k.replace('_', ' ')}: {v}s" for k, v in medians.items())
         timing_summary = f"Timing intervals measured across session transitions (median elapsed: {median_summary})."
@@ -775,10 +613,14 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
         b = periods_out['before']['devices'].get(device, {}).get('visit_to_paid', {}).get('percent')
         a = periods_out['after']['devices'].get(device, {}).get('visit_to_paid', {}).get('percent')
         change = round(a - b, 2) if a is not None and b is not None else None
-        comparisons[device] = {'before_percent': b, 'after_percent': a, 'change_percentage_points': change,
-                               'before_counts': periods_out['before']['devices'].get(device, {}).get('counts', {}),
-                               'after_counts': periods_out['after']['devices'].get(device, {}).get('counts', {}),
-                               'low_volume': (periods_out['before']['devices'].get(device, {}).get('sessions', 0) < 30 or periods_out['after']['devices'].get(device, {}).get('sessions', 0) < 30)}
+        comparisons[device] = {
+            'before_percent': b,
+            'after_percent': a,
+            'change_percentage_points': change,
+            'before_counts': periods_out['before']['devices'].get(device, {}).get('counts', {}),
+            'after_counts': periods_out['after']['devices'].get(device, {}).get('counts', {}),
+            'low_volume': (periods_out['before']['devices'].get(device, {}).get('sessions', 0) < 30 or periods_out['after']['devices'].get(device, {}).get('sessions', 0) < 30)
+        }
     overall_b = periods_out['before']['conversions']['visit_to_paid']['percent']
     overall_a = periods_out['after']['conversions']['visit_to_paid']['percent']
     overall_change = round(overall_a - overall_b, 2) if overall_a is not None and overall_b is not None else None
@@ -833,12 +675,21 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
         'data_version': fixture_data.get('data_version') if fixture_data else None,
         'period_dates': {'before': before_date, 'after': after_date},
         'timing_analysis': timing_analysis,
-        'event_quality': {'raw_events': raw_count, 'unique_event_ids': len(seen), 'duplicates_removed': duplicate_count,
-                          'events_without_event_id': sum(not e['event_id'] for e in normalized),
-                          'sessions_without_visit': len(no_visit_sessions), 'sessions_without_visit_ids': no_visit_sessions,
-                          'instrumentation_gaps': ([] if methods_present else ['payment_method field is absent or empty; payment-method segmentation is unavailable']),
-                          'unknown_device_sessions': sum(s['device'] == 'unknown' for s in session_rows)},
-        'session_count': {'before': periods_out['before']['session_count'], 'after': periods_out['after']['session_count'], 'total_assigned': sum(p['session_count'] for p in periods_out.values())},
+        'event_quality': {
+            'raw_events': raw_count,
+            'unique_event_ids': len(seen),
+            'duplicates_removed': duplicate_count,
+            'events_without_event_id': sum(not e['event_id'] for e in normalized),
+            'sessions_without_visit': len(no_visit_sessions),
+            'sessions_without_visit_ids': no_visit_sessions,
+            'instrumentation_gaps': ([] if methods_present else ['payment_method field is absent or empty; payment-method segmentation is unavailable']),
+            'unknown_device_sessions': sum(s['device'] == 'unknown' for s in session_rows)
+        },
+        'session_count': {
+            'before': periods_out['before']['session_count'],
+            'after': periods_out['after']['session_count'],
+            'total_assigned': sum(p['session_count'] for p in periods_out.values())
+        },
         'periods': periods_out,
         'overall_visit_to_paid': {'before_percent': overall_b, 'after_percent': overall_a, 'change_percentage_points': overall_change},
         'device_comparison': comparisons,
@@ -860,11 +711,14 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
                 ] if present
             ]
         },
-        'notes': ['Conversion rates use distinct sessions and session step progression, not event counts.',
-                  'Funnel order is visit → cart → checkout → paid; timestamp ties do not change step order.',
-                  'Missing values are unknown, not zero.',
-                  'Percentage-point changes are calculated from numerator and denominator counts, not averages of segment rates.']
+        'notes': [
+            'Conversion rates use distinct sessions and session step progression, not event counts.',
+            'Funnel order is visit → cart → checkout → paid; timestamp ties do not change step order.',
+            'Missing values are unknown, not zero.',
+            'Percentage-point changes are calculated from numerator and denominator counts, not averages of segment rates.'
+        ]
     }
+
     if is_builtin and fixture_data and isinstance(fixture_data.get('records', {}).get('expected'), dict):
         expected = fixture_data['records']['expected']
         checks = {}
@@ -886,51 +740,10 @@ def analyze(raw_events, fixture_data=None, is_builtin=False):
             act = actual_map.get(key)
             ok = (abs(act - exp) < 1e-5) if isinstance(exp, (int, float)) and isinstance(act, (int, float)) else act == exp
             checks[key] = {'expected': exp, 'actual': act, 'match': ok}
-        result['fixture_validation'] = {'checks': checks, 'passed': sum(c['match'] for c in checks.values()), 'total': len(checks), 'all_match': all(c['match'] for c in checks.values())}
+        result['fixture_validation'] = {
+            'checks': checks,
+            'passed': sum(c['match'] for c in checks.values()),
+            'total': len(checks),
+            'all_match': all(c['match'] for c in checks.values())
+        }
     return result
-
-
-current_dataset = None
-
-
-@app.get('/api/analysis')
-def get_analysis():
-    global current_dataset
-    if current_dataset is not None:
-        events, fixture = current_dataset
-        return jsonify(analyze(events, fixture_data=fixture, is_builtin=False))
-    events, fixture = load_fixture()
-    return jsonify(analyze(events, fixture_data=fixture, is_builtin=True))
-
-
-@app.post('/api/upload')
-def upload():
-    global current_dataset
-    if 'file' not in request.files:
-        return jsonify({'error': 'Attach a CSV or JSON file using the form field named file.'}), 400
-    try:
-        events, fixture = parse_upload(request.files['file'])
-        current_dataset = (events, fixture)
-        return jsonify(analyze(events, fixture_data=fixture, is_builtin=False))
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
-
-
-@app.post('/api/reset')
-def reset():
-    global current_dataset
-    current_dataset = None
-    events, fixture = load_fixture()
-    return jsonify(analyze(events, fixture_data=fixture, is_builtin=True))
-
-
-@app.get('/')
-def index():
-    if request.headers.get('Accept') == 'application/json':
-        return jsonify({'message': 'C18 Checkout Drop-Off Investigator backend is running.', 'endpoints': ['/api/analysis', '/api/upload', '/api/reset']})
-    return render_template('index.html')
-
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', '5000')), debug=False)
-
